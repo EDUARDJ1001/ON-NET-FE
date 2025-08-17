@@ -58,7 +58,6 @@ export default function SidebarAdmin({
             <Item href="/pages/admin/clientes" label="Gestión de Clientes" />
             <Item href="/pages/admin/empleados" label="Gestión de Empleados" />
             <Item href="/pages/admin/reportes" label="Reportes Generales" />
-            <Item href="/pages/admin/config" label="Configuración del Sistema" />
           </ul>
         </div>
 
