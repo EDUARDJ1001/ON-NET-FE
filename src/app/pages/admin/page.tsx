@@ -1,10 +1,21 @@
 "use client";
 
+import { useAuth } from "@/app/auth/useAuth";
+import Footer from "@/app/components/footer";
 import HeaderAdmin from "@/app/components/headerAdmin";
 import Link from "next/link";
+import { useEffect } from "react";
 
 
 const HomeAdmin = () => {
+    const { isAuthenticated, loading } = useAuth();
+
+    useEffect(() => {
+        if (!loading && !isAuthenticated) {
+            window.location.href = "/noAuth";
+        }
+    }, [isAuthenticated, loading]);
+
     return (
         <>
             <div className="font-[Orbitron] min-h-screen bg-gradient-to-br from-orange-400 to-sky-500 text-[#1C1C1C]">
@@ -80,6 +91,7 @@ const HomeAdmin = () => {
                     </div>
                 </main>
             </div>
+            <Footer />
         </>
     );
 };

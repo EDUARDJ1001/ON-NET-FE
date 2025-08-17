@@ -76,86 +76,88 @@ const RegistrarCliente = () => {
 
     return (
         <AdminLayout>
-            <div className="w-full max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-xl border border-orange-300">
-                <h1 className="text-3xl font-bold text-orange-500 mb-6 text-center">
-                    Registrar Cliente
-                </h1>
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <input
-                        type="text"
-                        name="nombre"
-                        placeholder="Nombre del cliente"
-                        value={form.nombre}
-                        onChange={handleChange}
-                        required
-                        className="w-full px-4 py-2 border rounded-md"
-                    />
-
-                    <input
-                        type="text"
-                        name="ip"
-                        placeholder="IP"
-                        value={form.ip}
-                        onChange={handleChange}
-                        className="w-full px-4 py-2 border rounded-md"
-                    />
-
-                    <input
-                        type="text"
-                        name="direccion"
-                        placeholder="Dirección"
-                        value={form.direccion}
-                        onChange={handleChange}
-                        className="w-full px-4 py-2 border rounded-md"
-                    />
-
-                    <input
-                        type="text"
-                        name="coordenadas"
-                        placeholder="Coordenadas (ej. 14.078,-87.213)"
-                        value={form.coordenadas}
-                        onChange={handleChange}
-                        className="w-full px-4 py-2 border rounded-md"
-                    />
-
-                    <input
-                        type="text"
-                        name="telefono"
-                        placeholder="Teléfono"
-                        value={form.telefono}
-                        onChange={handleChange}
-                        className="w-full px-4 py-2 border rounded-md"
-                    />
-
-                    <select
-                        name="plan_id"
-                        value={form.plan_id}
-                        onChange={handleChange}
-                        required
-                        className="w-full px-4 py-2 border rounded-md"
-                    >
-                        <option value="">Selecciona un plan</option>
-                        {planes.map((plan) => (
-                            <option key={plan.id} value={plan.id}>
-                                {plan.nombre} - L.{plan.precio_mensual}
-                            </option>
-                        ))}
-                    </select>
-
-                    <button
-                        type="submit"
-                        className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
-                    >
+            <div className="px-4 sm:px-6 lg:px-8 md:mt-16">
+                <div className="w-full max-w-3xl mx-auto bg-white p-8 rounded-2xl shadow-xl border border-orange-300">
+                    <h1 className="text-3xl font-bold text-orange-500 mb-6 text-center">
                         Registrar Cliente
-                    </button>
-                </form>
+                    </h1>
 
-                {mensaje && (
-                    <p className="mt-4 text-center text-sm font-semibold text-orange-600">
-                        {mensaje}
-                    </p>
-                )}
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <input
+                            type="text"
+                            name="nombre"
+                            placeholder="Nombre del cliente"
+                            value={form.nombre}
+                            onChange={handleChange}
+                            required
+                            className="w-full px-4 py-2 border rounded-md"
+                        />
+
+                        <input
+                            type="text"
+                            name="ip"
+                            placeholder="IP"
+                            value={form.ip}
+                            onChange={handleChange}
+                            className="w-full px-4 py-2 border rounded-md"
+                        />
+
+                        <input
+                            type="text"
+                            name="direccion"
+                            placeholder="Dirección"
+                            value={form.direccion}
+                            onChange={handleChange}
+                            className="w-full px-4 py-2 border rounded-md"
+                        />
+
+                        <input
+                            type="text"
+                            name="coordenadas"
+                            placeholder="Coordenadas (ej. 14.078,-87.213)"
+                            value={form.coordenadas}
+                            onChange={handleChange}
+                            className="w-full px-4 py-2 border rounded-md"
+                        />
+
+                        <input
+                            type="text"
+                            name="telefono"
+                            placeholder="Teléfono"
+                            value={form.telefono}
+                            onChange={handleChange}
+                            className="w-full px-4 py-2 border rounded-md"
+                        />
+
+                        <select
+                            name="plan_id"
+                            value={form.plan_id}
+                            onChange={handleChange}
+                            required
+                            className="w-full px-4 py-2 border rounded-md"
+                        >
+                            <option value="">Selecciona un plan</option>
+                            {planes.map((plan) => (
+                                <option key={plan.id} value={plan.id}>
+                                    {plan.nombre} - L.{plan.precio_mensual}
+                                </option>
+                            ))}
+                        </select>
+
+                        <button
+                            type="submit"
+                            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
+                        >
+                            Registrar Cliente
+                        </button>
+                    </form>
+
+                    {mensaje && (
+                        <p className="mt-4 text-center text-sm font-semibold text-orange-600">
+                            {mensaje}
+                        </p>
+                    )}
+                </div>
             </div>
         </AdminLayout>
     );

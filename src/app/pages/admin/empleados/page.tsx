@@ -78,63 +78,64 @@ const GestionEmpleados = () => {
 
   return (
     <AdminLayout>
-      <div className="flex justify-between items-center mb-4">
-        <Link
-          href="/pages/admin/empleados/registrar"
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-        >
-          + Registrar Empleado
-        </Link>
-      </div>
-
-      <div className="w-full bg-white p-6 rounded-xl border shadow">
-        <h1 className="text-2xl font-bold text-orange-600 mb-4 text-center">
-          Gestión de Empleados
-        </h1>
-
-        {loading ? (
-          <p className="text-center text-gray-500">Cargando empleados...</p>
-        ) : error ? (
-          <p className="text-center text-red-500">{error}</p>
-        ) : (
-          <table className="table-auto w-full text-sm border border-gray-300">
-            <thead className="bg-orange-100">
-              <tr>
-                <th className="px-3 py-2 border">Nombre</th>
-                <th className="px-3 py-2 border">Apellido</th>
-                <th className="px-3 py-2 border">Usuario</th>
-                <th className="px-3 py-2 border">Cargo</th>
-                <th className="px-3 py-2 border">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {empleados.map((e) => (
-                <tr key={e.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 border">{e.nombre}</td>
-                  <td className="px-3 py-2 border">{e.apellido}</td>
-                  <td className="px-3 py-2 border">{e.username}</td>
-                  <td className="px-3 py-2 border">
-                    {cargos.find(c => c.id === e.cargo_id)?.nombreCargo || "Sin cargo"}
-                  </td>
-                  <td className="px-3 py-2 border flex gap-2">
-                    <button
-                      className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700"
-                      onClick={() => setModalEmpleado(e)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700"
-                      onClick={() => eliminarEmpleado(e.id)}
-                    >
-                      Eliminar
-                    </button>
-                  </td>
+      <div className="px-4 sm:px-6 lg:px-8 md:mt-16">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-orange-600">Gestión de Empleados</h1>
+          <Link
+            href="/pages/admin/empleados/registrar"
+            className="inline-flex justify-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+          >
+            + Registrar Empleados
+          </Link>
+        </div>
+        <div className="w-full bg-white p-6 rounded-xl border shadow">
+          <p className="text-sm sm:text-base lg:text-lg text-slate-700 mb-4 sm:mb-6 text-center">
+            Consulta y administra los empleados del sistema.
+          </p>
+          {loading ? (
+            <p className="text-center text-gray-500">Cargando empleados...</p>
+          ) : error ? (
+            <p className="text-center text-red-500">{error}</p>
+          ) : (
+            <table className="table-auto w-full text-sm border border-gray-300">
+              <thead className="bg-orange-100">
+                <tr>
+                  <th className="px-3 py-2 border">Nombre</th>
+                  <th className="px-3 py-2 border">Apellido</th>
+                  <th className="px-3 py-2 border">Usuario</th>
+                  <th className="px-3 py-2 border">Cargo</th>
+                  <th className="px-3 py-2 border">Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+              </thead>
+              <tbody>
+                {empleados.map((e) => (
+                  <tr key={e.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 border">{e.nombre}</td>
+                    <td className="px-3 py-2 border">{e.apellido}</td>
+                    <td className="px-3 py-2 border">{e.username}</td>
+                    <td className="px-3 py-2 border">
+                      {cargos.find(c => c.id === e.cargo_id)?.nombreCargo || "Sin cargo"}
+                    </td>
+                    <td className="px-3 py-2 border flex gap-2">
+                      <button
+                        className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700"
+                        onClick={() => setModalEmpleado(e)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700"
+                        onClick={() => eliminarEmpleado(e.id)}
+                      >
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
       {modalEmpleado && (
