@@ -14,7 +14,7 @@ interface Pago {
     metodo_id: number;
     metodo_pago_desc: string;
     referencia: string;
-    observacion: string;
+    observaciones: string;
     created_at: string;
     updated_at: string;
 }
@@ -76,11 +76,16 @@ const VerPagos = () => {
         });
     };
 
-    const formatMonto = (monto: number) => {
+    const formatMonto = (monto: number | undefined) => {
+        // Asegurarse de que monto sea un número válido
+        const montoNumero = Number(monto);
+        if (isNaN(montoNumero)) {
+            return 'L. 0.00';
+        }
         return new Intl.NumberFormat('es-HN', {
             style: 'currency',
             currency: 'HNL'
-        }).format(monto);
+        }).format(montoNumero);
     };
 
     const pagosFiltrados = pagos.filter(pago => {
@@ -93,7 +98,11 @@ const VerPagos = () => {
         return coincideCliente && coincideMetodo;
     });
 
-    const totalMonto = pagosFiltrados.reduce((sum, pago) => sum + pago.monto, 0);
+    // Asegurarse de que cada monto sea un número válido antes de sumar
+    const totalMonto = pagosFiltrados.reduce((sum, pago) => {
+        const montoNumero = Number(pago.monto);
+        return sum + (isNaN(montoNumero) ? 0 : montoNumero);
+    }, 0);
 
     if (loading) {
         return (
@@ -107,7 +116,7 @@ const VerPagos = () => {
 
     return (
         <AdminLayout>
-            <div className="px-4 sm:px-6 lg:px-8 py-16">
+            <div className="px-4 sm:px-6 lg:px-8 py-8">
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                     <div>
@@ -190,7 +199,7 @@ const VerPagos = () => {
                             <thead className="bg-slate-50">
                                 <tr>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">
-                                        Id de Pago
+                                        ID
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">
                                         Cliente
@@ -243,7 +252,7 @@ const VerPagos = () => {
                                                 {pago.referencia || '-'}
                                             </td>
                                             <td className="px-4 py-4 text-sm text-slate-900 max-w-xs truncate">
-                                                {pago.observacion || '-'}
+                                                {pago.observaciones || '-'}
                                             </td>
                                         </tr>
                                     ))
