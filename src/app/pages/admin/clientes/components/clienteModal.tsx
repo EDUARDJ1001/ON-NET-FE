@@ -14,6 +14,7 @@ interface Cliente {
   ip: string;
   direccion: string;
   telefono: string;
+  pass_onu: string;
   coordenadas: string;
   plan_id: number;
   estados: Estado[];
@@ -25,15 +26,6 @@ interface ClienteModalProps {
   onClienteUpdated: () => void;
   apiHost: string;
 }
-
-const camposEditables: (keyof Omit<Cliente, "id" | "estados">)[] = [
-  "nombre",
-  "ip",
-  "direccion",
-  "telefono",
-  "coordenadas",
-  "plan_id",
-];
 
 const MESES = [
   "Enero",
@@ -59,20 +51,10 @@ const ClienteModal = ({
   const [form, setForm] = useState<Cliente>(cliente);
   const [editando, setEditando] = useState(false);
   const [mensaje, setMensaje] = useState("");
-  const [registrandoPago, setRegistrandoPago] = useState(false);
   const [planes, setPlanes] = useState<{ id: number; nombre: string }[]>([]);
   const [guardando, setGuardando] = useState(false);
-  const [guardandoPago, setGuardandoPago] = useState(false);
-
-  const [pago, setPago] = useState({
-    monto: "",
-    mes: new Date().getMonth() + 1,
-    anio: new Date().getFullYear(),
-    observacion: "",
-  });
 
   const overlayRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   // Bloquear scroll del body mientras el modal está abierto
   useEffect(() => {
@@ -116,7 +98,10 @@ const ClienteModal = ({
     const { name, value } = e.target;
     // plan_id debe mantenerse como número
     if (name === "plan_id") {
-      setForm((prev) => ({ ...prev, plan_id: value ? Number(value) : ("" as unknown as number) }));
+      setForm((prev) => ({
+        ...prev,
+        plan_id: value ? Number(value) : ("" as unknown as number),
+      }));
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
@@ -145,47 +130,6 @@ const ClienteModal = ({
     }
   };
 
-  const handlePagoChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setPago((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleRegistrarPago = async () => {
-    setGuardandoPago(true);
-    setMensaje("");
-    try {
-      const res = await fetch(`${apiHost}/api/pagos`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cliente_id: cliente.id,
-          monto: parseFloat(pago.monto || "0"),
-          fecha_pago: `${pago.anio}-${String(pago.mes).padStart(2, "0")}-01`,
-          observacion: pago.observacion,
-        }),
-      });
-
-      if (!res.ok) throw new Error("Error al registrar el pago");
-
-      setMensaje("✅ Pago registrado y estado actualizado");
-      setPago({
-        monto: "",
-        mes: new Date().getMonth() + 1,
-        anio: new Date().getFullYear(),
-        observacion: "",
-      });
-      setRegistrandoPago(false);
-      onClienteUpdated();
-    } catch (error) {
-      console.error(error);
-      setMensaje("❌ No se pudo registrar el pago");
-    } finally {
-      setGuardandoPago(false);
-    }
-  };
-
   return (
     <div
       ref={overlayRef}
@@ -196,7 +140,6 @@ const ClienteModal = ({
       aria-labelledby="cliente-modal-title"
     >
       <div
-        ref={dialogRef}
         className="
           w-full sm:max-w-2xl lg:max-w-3xl 
           bg-white shadow-xl
@@ -300,6 +243,21 @@ const ClienteModal = ({
               />
             </div>
 
+            {/* Password ONU */}
+            <div className="flex flex-col md:col-span-2">
+              <label className="text-xs font-medium text-slate-600 mb-1">Contraseña ONU</label>
+              <input
+                type="text"
+                name="pass_onu"
+                value={form.pass_onu ?? ""}
+                onChange={handleChange}
+                readOnly={!editando}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
+              />
+            </div>
+
             {/* plan */}
             <div className="flex flex-col md:col-span-2">
               <label className="text-xs font-medium text-slate-700 mb-1">Plan</label>
@@ -328,7 +286,10 @@ const ClienteModal = ({
             {cliente.estados?.length ? (
               <ul className="text-sm grid grid-cols-1 sm:grid-cols-2 gap-1">
                 {cliente.estados.map((e, i) => (
-                  <li key={`${e.anio}-${e.mes}-${i}`} className="flex items-center justify-between border rounded-md px-3 py-2">
+                  <li
+                    key={`${e.anio}-${e.mes}-${i}`}
+                    className="flex items-center justify-between border rounded-md px-3 py-2"
+                  >
                     <span className="text-slate-600">
                       {MESES[e.mes - 1]} / {e.anio}
                     </span>
@@ -355,98 +316,6 @@ const ClienteModal = ({
           {mensaje && (
             <p className="mt-4 text-center text-sm font-semibold text-orange-600">{mensaje}</p>
           )}
-
-          {/* Registrar pago */}
-          <div className="mt-6">
-            <button
-              onClick={() => setRegistrandoPago((v) => !v)}
-              className="w-full sm:w-auto bg-orange-500 text-white px-4 py-2 rounded-md hover:bg-orange-600 transition"
-            >
-              {registrandoPago ? "Cancelar Pago" : "Registrar Pago"}
-            </button>
-
-            {registrandoPago && (
-              <div className="mt-4 border rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3">Nuevo Pago</h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="sm:col-span-1">
-                    <label className="text-xs font-medium text-slate-600 mb-1 block">
-                      Monto
-                    </label>
-                    <input
-                      type="number"
-                      name="monto"
-                      value={pago.monto}
-                      onChange={handlePagoChange}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 mb-1 block">
-                      Mes
-                    </label>
-                    <select
-                      name="mes"
-                      value={pago.mes}
-                      onChange={(e) => setPago((prev) => ({ ...prev, mes: parseInt(e.target.value) }))}
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                    >
-                      {MESES.map((nombre, index) => (
-                        <option key={index} value={index + 1}>
-                          {nombre}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 mb-1 block">
-                      Año
-                    </label>
-                    <select
-                      name="anio"
-                      value={pago.anio}
-                      onChange={(e) => setPago((prev) => ({ ...prev, anio: parseInt(e.target.value) }))}
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                    >
-                      {Array.from({ length: 5 }).map((_, i) => {
-                        const anio = new Date().getFullYear() - 2 + i; // 2 atrás, 2 adelante, actual al centro
-                        return (
-                          <option key={anio} value={anio}>
-                            {anio}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <label className="text-xs font-medium text-slate-600 mb-1 block">
-                    Observación
-                  </label>
-                  <textarea
-                    name="observacion"
-                    value={pago.observacion}
-                    onChange={handlePagoChange}
-                    placeholder="Opcional"
-                    className="w-full px-3 py-2 border rounded-md min-h-[72px] resize-y focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                  />
-                </div>
-
-                <button
-                  onClick={handleRegistrarPago}
-                  disabled={guardandoPago}
-                  className="mt-4 w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition disabled:opacity-60"
-                >
-                  {guardandoPago ? "Guardando..." : "Guardar Pago"}
-                </button>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Footer sticky */}

@@ -19,6 +19,7 @@ const RegistrarCliente = () => {
         direccion: "",
         coordenadas: "",
         telefono: "",
+        pass_onu: "",
         plan_id: ""
     });
 
@@ -65,6 +66,7 @@ const RegistrarCliente = () => {
                 direccion: "",
                 coordenadas: "",
                 telefono: "",
+                pass_onu: "",
                 plan_id: ""
             });
 
@@ -125,6 +127,15 @@ const RegistrarCliente = () => {
                             name="telefono"
                             placeholder="Teléfono"
                             value={form.telefono}
+                            onChange={handleChange}
+                            className="w-full px-4 py-2 border rounded-md"
+                        />
+
+                        <input
+                            type="text"
+                            name="pass_onu"
+                            placeholder="Contraseña ONU"
+                            value={form.pass_onu}
                             onChange={handleChange}
                             className="w-full px-4 py-2 border rounded-md"
                         />

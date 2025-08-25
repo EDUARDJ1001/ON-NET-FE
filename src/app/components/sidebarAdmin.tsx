@@ -64,11 +64,10 @@ export default function SidebarAdmin({
         <hr className="border-orange-300/60" />
 
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-orange-500/80">Cajero</p>
+          <p className="text-xs uppercase tracking-wide text-orange-500/80">Caja</p>
           <ul className="space-y-1">
-            <Item href="/pages/cajero/registrar-pago" label="Registrar Pago" />
-            <Item href="/pages/cajero/historial" label="Historial de Pagos" />
-            <Item href="/pages/cajero/buscar" label="Buscar Cliente" />
+            <Item href="/pages/admin/caja" label="Registrar Pago" />
+            <Item href="/pages/admin/caja/historial" label="Historial de Pagos" />
           </ul>
         </div>
 
