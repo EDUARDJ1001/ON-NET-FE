@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import AdminLayout from "@/app/components/adminLayout";
 import Link from "next/link";
 import ClienteModal from "./components/clienteModal";
+import Pagination from "@/app/components/pagination";
+import SearchDropdown from "@/app/components/searchBar";
 
 const apiHost = process.env.NEXT_PUBLIC_API_HOST as string;
 
@@ -68,20 +70,23 @@ const buildMapLinks = (coordenadas?: string, direccion?: string) => {
   const q = encodeURIComponent(direccion || "");
   return q
     ? {
-        gmaps: `https://www.google.com/maps?q=${q}`,
-        waze: `https://waze.com/ul?q=${q}&navigate=yes`,
-        label: direccion,
-      }
+      gmaps: `https://www.google.com/maps?q=${q}`,
+      waze: `https://waze.com/ul?q=${q}&navigate=yes`,
+      label: direccion,
+    }
     : null;
 };
 
 const GestionClientes = () => {
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [clientesFiltrados, setClientesFiltrados] = useState<Cliente[]>([]);
   const [modalCliente, setModalCliente] = useState<Cliente | null>(null);
   const [anioActual] = useState(new Date().getFullYear());
   const [aniosCliente, setAniosCliente] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const obtenerOInicializarEstados = async (clienteId: number, anio: number): Promise<EstadoMensual[]> => {
     const response = await fetch(`${apiHost}/api/estado-mensual/cliente/${clienteId}/anio/${anio}`);
@@ -119,12 +124,45 @@ const GestionClientes = () => {
         })
       );
       setClientes(clientesConEstados);
+      setClientesFiltrados(clientesConEstados); // Inicializar clientes filtrados con todos los clientes
     } catch (err) {
       console.error("Error al obtener clientes o estados:", err);
       setError("No se pudo cargar la lista de clientes.");
     } finally {
       setLoading(false);
     }
+  };
+
+  // Función para manejar la búsqueda
+  const handleSearch = (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setClientesFiltrados(clientes); // Si no hay término de búsqueda, mostrar todos
+      setCurrentPage(1);
+      return;
+    }
+
+    const term = searchTerm.toLowerCase().trim();
+    const filtered = clientes.filter(cliente =>
+      cliente.nombre.toLowerCase().includes(term) ||
+      cliente.telefono.includes(term) ||
+      cliente.direccion.toLowerCase().includes(term) ||
+      (cliente.descripcion && cliente.descripcion.toLowerCase().includes(term))
+    );
+    
+    setClientesFiltrados(filtered);
+    setCurrentPage(1); // Resetear a la primera página al buscar
+  };
+
+  // Obtener nombres de clientes para las sugerencias (opcional, si quieres mantener el dropdown)
+  const clientNames = clientes.map(cliente => cliente.nombre);
+
+  // Calcular clientes para la página actual
+  const indexOfLastClient = currentPage * itemsPerPage;
+  const indexOfFirstClient = indexOfLastClient - itemsPerPage;
+  const currentClients = clientesFiltrados.slice(indexOfFirstClient, indexOfLastClient);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
   };
 
   useEffect(() => {
@@ -145,6 +183,16 @@ const GestionClientes = () => {
           </Link>
         </div>
 
+        {/* Barra de búsqueda */}
+        <div className="mb-6">
+          <SearchDropdown
+            items={clientNames}
+            placeholder="Buscar por nombre, teléfono, dirección o estado..."
+            onSearch={handleSearch}
+            className="w-full max-w-md"
+          />
+        </div>
+
         <div className="w-full bg-white p-4 sm:p-6 lg:p-8 rounded-2xl shadow-xl border border-orange-300">
           <p className="text-sm sm:text-base lg:text-lg text-slate-700 mb-4 sm:mb-6 text-center">
             Consulta el estado de los clientes y gestiona sus pagos.
@@ -158,9 +206,16 @@ const GestionClientes = () => {
             <p className="text-center text-slate-500">No hay clientes registrados.</p>
           ) : (
             <>
+              {/* Mostrar mensaje si no hay resultados de búsqueda */}
+              {clientesFiltrados.length === 0 && (
+                <p className="text-center text-slate-500 mb-4">
+                  No se encontraron clientes que coincidan con la búsqueda.
+                </p>
+              )}
+
               {/* ===== Móvil / tablets pequeñas: tarjetas ===== */}
               <div className="grid gap-3 sm:gap-4 md:hidden">
-                {clientes.map((cliente) => {
+                {currentClients.map((cliente) => {
                   const anio = aniosCliente[cliente.id] || anioActual;
                   const maps = buildMapLinks(cliente.coordenadas, cliente.direccion);
                   return (
@@ -223,7 +278,7 @@ const GestionClientes = () => {
                       {/* Estados mensuales (scroll horizontal) */}
                       <div className="mt-3 -mx-1 overflow-x-auto">
                         <div className="flex items-center gap-2 px-1 py-1">
-                          {["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sept","Oct","Nov","Dic"].map((mesTxt, i) => {
+                          {["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sept", "Oct", "Nov", "Dic"].map((mesTxt, i) => {
                             const e = cliente.estados?.find((x) => x.mes === i + 1 && x.anio === anio);
                             let cls = "text-slate-400 border-slate-300";
                             if (e?.estado === "Pagado") cls = "text-green-700 border-green-300";
@@ -275,7 +330,7 @@ const GestionClientes = () => {
                     </thead>
 
                     <tbody>
-                      {clientes.map((cliente) => {
+                      {currentClients.map((cliente) => {
                         const maps = buildMapLinks(cliente.coordenadas, cliente.direccion);
                         return (
                           <tr key={cliente.id} className="hover:bg-orange-50">
@@ -346,7 +401,7 @@ const GestionClientes = () => {
                                   <table className="table-auto border border-collapse text-center text-xs w-full">
                                     <thead className="bg-slate-100">
                                       <tr>
-                                        {["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sept","Oct","Nov","Dic"].map((mes, idx) => (
+                                        {["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sept", "Oct", "Nov", "Dic"].map((mes, idx) => (
                                           <th key={idx} className="px-1 py-1 border border-slate-300 min-w-[40px]">
                                             {mes}
                                           </th>
@@ -391,6 +446,14 @@ const GestionClientes = () => {
                       })}
                     </tbody>
                   </table>
+                </div>
+                <div className="flex justify-center mt-4">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalItems={clientesFiltrados.length}
+                    itemsPerPage={itemsPerPage}
+                    onPageChange={handlePageChange}
+                  />
                 </div>
               </div>
             </>
