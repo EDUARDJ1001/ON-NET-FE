@@ -41,6 +41,7 @@ const RegistrarPago = () => {
     const searchParams = useSearchParams();
     const clienteIdParam = searchParams.get("clienteId");
 
+    const [clienteIdInput, setClienteIdInput] = useState<string>("");
     const [clienteId, setClienteId] = useState<number | null>(
         clienteIdParam ? Number(clienteIdParam) : null
     );
@@ -50,12 +51,13 @@ const RegistrarPago = () => {
     const [metodosPago, setMetodosPago] = useState<MetodoPago[]>([]);
 
     const now = new Date();
-    const [anio, setAnio] = useState(now.getFullYear());
-    const [mes, setMes] = useState(now.getMonth() + 1);
+    const [anioAplicado, setAnioAplicado] = useState(now.getFullYear());
+    const [mesAplicado, setMesAplicado] = useState(now.getMonth() + 1);
+    const [fechaPago, setFechaPago] = useState(now.toISOString().split('T')[0]);
 
     const [monto, setMonto] = useState<number>(0);
     const [referencia, setReferencia] = useState("");
-    const [observaciones, setObservaciones] = useState("");
+    const [observacion, setObservacion] = useState("");
     const [recibido, setRecibido] = useState<number>(0);
 
     const [loading, setLoading] = useState(false);
@@ -68,6 +70,21 @@ const RegistrarPago = () => {
         const c = (recibido || 0) - (monto || 0);
         return isNaN(c) ? 0 : c;
     }, [recibido, monto]);
+
+    // Validar si el mes aplicado es futuro
+    const isMesFuturo = useMemo(() => {
+        const selectedDate = new Date(anioAplicado, mesAplicado - 1, 1);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return selectedDate > today;
+    }, [mesAplicado, anioAplicado]);
+
+    // Función para cargar cliente desde el input
+    const handleCargarCliente = () => {
+        if (clienteIdInput && !isNaN(Number(clienteIdInput))) {
+            setClienteId(Number(clienteIdInput));
+        }
+    };
 
     // Cargar métodos de pago
     useEffect(() => {
@@ -122,13 +139,16 @@ const RegistrarPago = () => {
         } catch (e) {
             console.error(e);
             setError("No se pudo cargar la información del cliente/plan.");
+            setCliente(null);
         } finally {
             setLoadingCliente(false);
         }
     };
 
     useEffect(() => {
-        if (clienteId) fetchCliente(clienteId);
+        if (clienteId) {
+            fetchCliente(clienteId);
+        }
     }, [clienteId]);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -148,12 +168,20 @@ const RegistrarPago = () => {
             setError("El monto debe ser mayor a 0.");
             return;
         }
-        if (mes < 1 || mes > 12) {
+        if (mesAplicado < 1 || mesAplicado > 12) {
             setError("Selecciona un mes válido.");
             return;
         }
-        if (!anio || anio < 2000) {
+        if (!anioAplicado || anioAplicado < 2000) {
             setError("Selecciona un año válido.");
+            return;
+        }
+        if (isMesFuturo) {
+            setError("No se pueden registrar pagos para meses futuros.");
+            return;
+        }
+        if (!fechaPago) {
+            setError("La fecha de pago es requerida.");
             return;
         }
 
@@ -161,13 +189,13 @@ const RegistrarPago = () => {
         try {
             const body = {
                 cliente_id: clienteId,
-                mes,
-                anio,
                 monto: Number(monto),
+                fecha_pago: fechaPago,
                 metodo_id: metodoId,
                 referencia: referencia || null,
-                observaciones: observaciones || null,
-                fecha_pago: new Date().toISOString().split('T')[0] // Fecha actual en formato YYYY-MM-DD
+                observacion: observacion || null,
+                mes_aplicado: mesAplicado,
+                anio_aplicado: anioAplicado
             };
 
             const res = await fetch(`${apiHost}/api/pagos`, {
@@ -177,14 +205,23 @@ const RegistrarPago = () => {
             });
 
             if (!res.ok) {
-                const msg = await res.text();
-                throw new Error(msg || "Error al registrar el pago");
+                const errorData = await res.json();
+                throw new Error(errorData.message || "Error al registrar el pago");
             }
 
-            setOkMsg("✅ Pago registrado con éxito.");
+            const result = await res.json();
+
+            setOkMsg(`✅ Pago registrado con éxito para ${monthNames[mesAplicado - 1]} ${anioAplicado}.`);
             setReferencia("");
-            setObservaciones("");
+            setObservacion("");
             setRecibido(0);
+
+            // Opcional: resetear a mes actual después de éxito
+            const now = new Date();
+            setMesAplicado(now.getMonth() + 1);
+            setAnioAplicado(now.getFullYear());
+            setFechaPago(now.toISOString().split('T')[0]);
+
         } catch (err) {
             console.error(err);
             if (err instanceof Error) {
@@ -214,7 +251,7 @@ const RegistrarPago = () => {
 
                 <div className="w-full bg-white p-4 sm:p-6 lg:p-8 rounded-2xl shadow-xl border border-orange-300">
                     {/* Selector de cliente si no vino en query */}
-                    {!clienteId && (
+                    {!cliente && !loadingCliente && (
                         <div className="mb-4">
                             <label className="block text-sm font-medium text-slate-700 mb-1">
                                 ID del Cliente
@@ -223,13 +260,21 @@ const RegistrarPago = () => {
                                 <input
                                     type="number"
                                     placeholder="Ej. 123"
+                                    value={clienteIdInput}
                                     className="w-40 px-3 py-2 border rounded-md"
-                                    onChange={(e) => setClienteId(Number(e.target.value))}
+                                    onChange={(e) => setClienteIdInput(e.target.value)}
+                                    onKeyPress={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleCargarCliente();
+                                        }
+                                    }}
                                 />
                                 <button
                                     type="button"
-                                    onClick={() => clienteId && fetchCliente(clienteId)}
-                                    className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
+                                    onClick={handleCargarCliente}
+                                    disabled={!clienteIdInput}
+                                    className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                                 >
                                     Cargar Cliente
                                 </button>
@@ -244,7 +289,25 @@ const RegistrarPago = () => {
                     {loadingCliente ? (
                         <p className="text-slate-500 text-sm">Cargando cliente...</p>
                     ) : cliente ? (
-                        <div className="rounded-lg border border-slate-200 p-3 sm:p-4 mb-6">
+                        <div className="rounded-lg border border-slate-200 p-3 sm:p-4 mb-6 relative">
+                            {/* Botón para cambiar de cliente */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setCliente(null);
+                                    setClienteId(null);
+                                    setClienteIdInput("");
+                                    setPlan(null);
+                                    setMonto(0);
+                                }}
+                                className="absolute top-3 right-3 p-1 text-slate-400 hover:text-slate-600"
+                                title="Cambiar cliente"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <p className="text-sm text-slate-500">Cliente</p>
@@ -263,19 +326,94 @@ const RegistrarPago = () => {
                                     </p>
                                 </div>
                             </div>
+
+                            {/* Botón secundario para cambiar cliente */}
+                            <div className="mt-3 pt-3 border-t border-slate-100">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setCliente(null);
+                                        setClienteId(null);
+                                        setClienteIdInput("");
+                                        setPlan(null);
+                                        setMonto(0);
+                                    }}
+                                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Cambiar de cliente
+                                </button>
+                            </div>
                         </div>
                     ) : clienteId ? (
-                        <p className="text-red-600 text-sm mb-4">No se pudo cargar el cliente.</p>
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-4 mb-6">
+                            <p className="text-red-600 font-medium mb-2">No se pudo cargar el cliente con ID: {clienteId}</p>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setClienteId(null);
+                                    setClienteIdInput("");
+                                    setCliente(null);
+                                }}
+                                className="text-sm text-red-600 hover:text-red-800"
+                            >
+                                Intentar con otro ID
+                            </button>
+                        </div>
                     ) : null}
 
                     {/* Formulario de pago */}
                     <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Mes/Año */}
+                        {/* Fecha de pago */}
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Mes</label>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Fecha de pago
+                            </label>
+                            <input
+                                type="date"
+                                value={fechaPago}
+                                onChange={(e) => setFechaPago(e.target.value)}
+                                className="w-full px-3 py-2 border rounded-md"
+                                required
+                            />
+                        </div>
+
+                        {/* Método de pago */}
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Método de pago
+                            </label>
+                            {loadingMetodos ? (
+                                <select className="w-full px-3 py-2 border rounded-md bg-white" disabled>
+                                    <option>Cargando métodos...</option>
+                                </select>
+                            ) : (
+                                <select
+                                    value={metodoId || ""}
+                                    onChange={(e) => setMetodoId(Number(e.target.value))}
+                                    className="w-full px-3 py-2 border rounded-md bg-white"
+                                    required
+                                >
+                                    <option value="">Seleccionar método</option>
+                                    {metodosPago.map((metodo) => (
+                                        <option key={metodo.id} value={metodo.id}>
+                                            {metodo.descripcion}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                        </div>
+
+                        {/* Mes/Año aplicado */}
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Mes a aplicar
+                            </label>
                             <select
-                                value={mes}
-                                onChange={(e) => setMes(Number(e.target.value))}
+                                value={mesAplicado}
+                                onChange={(e) => setMesAplicado(Number(e.target.value))}
                                 className="w-full px-3 py-2 border rounded-md bg-white"
                             >
                                 {monthNames.map((m, idx) => (
@@ -284,17 +422,30 @@ const RegistrarPago = () => {
                                     </option>
                                 ))}
                             </select>
+                            {isMesFuturo && (
+                                <p className="mt-1 text-xs text-red-600">
+                                    ⚠️ Mes futuro seleccionado
+                                </p>
+                            )}
                         </div>
+
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Año</label>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Año a aplicar
+                            </label>
                             <input
                                 type="number"
-                                value={anio}
-                                onChange={(e) => setAnio(Number(e.target.value))}
+                                value={anioAplicado}
+                                onChange={(e) => setAnioAplicado(Number(e.target.value))}
                                 className="w-full px-3 py-2 border rounded-md"
                                 min={2000}
                                 max={2099}
                             />
+                            {isMesFuturo && (
+                                <p className="mt-1 text-xs text-red-600">
+                                    ⚠️ No se permiten pagos futuros
+                                </p>
+                            )}
                         </div>
 
                         {/* Monto / Recibido / Cambio */}
@@ -333,32 +484,6 @@ const RegistrarPago = () => {
                             </p>
                         </div>
 
-                        {/* Método de pago */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">
-                                Método de pago
-                            </label>
-                            {loadingMetodos ? (
-                                <select className="w-full px-3 py-2 border rounded-md bg-white" disabled>
-                                    <option>Cargando métodos...</option>
-                                </select>
-                            ) : (
-                                <select
-                                    value={metodoId || ""}
-                                    onChange={(e) => setMetodoId(Number(e.target.value))}
-                                    className="w-full px-3 py-2 border rounded-md bg-white"
-                                    required
-                                >
-                                    <option value="">Seleccionar método</option>
-                                    {metodosPago.map((metodo) => (
-                                        <option key={metodo.id} value={metodo.id}>
-                                            {metodo.descripcion}
-                                        </option>
-                                    ))}
-                                </select>
-                            )}
-                        </div>
-
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">
                                 Referencia (opcional)
@@ -379,8 +504,8 @@ const RegistrarPago = () => {
                             </label>
                             <textarea
                                 rows={3}
-                                value={observaciones}
-                                onChange={(e) => setObservaciones(e.target.value)}
+                                value={observacion}
+                                onChange={(e) => setObservacion(e.target.value)}
                                 className="w-full px-3 py-2 border rounded-md"
                                 placeholder="Notas adicionales sobre el pago..."
                             />
@@ -389,7 +514,7 @@ const RegistrarPago = () => {
                         <div className="md:col-span-2 mt-2">
                             <button
                                 type="submit"
-                                disabled={loading || !clienteId || !metodoId}
+                                disabled={loading || !clienteId || !metodoId || isMesFuturo}
                                 className="w-full md:w-auto px-6 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
                             >
                                 {loading ? "Registrando..." : "Registrar Pago"}

@@ -23,11 +23,11 @@ interface Cliente {
   ip: string;
   direccion: string;
   telefono: string;
-  pass_onu: string;           // se mantiene para uso en modal / no se expone en tabla
+  pass_onu: string;
   coordenadas: string;
   plan_id: number;
-  estado_id?: number;         // 1=Activo, 2=Inactivo, 3=Suspendido
-  descripcion?: EstadoNombre; // nombre del estado (si lo envía el backend)
+  estado_id?: number;
+  descripcion?: EstadoNombre;
   estados: EstadoMensual[];
 }
 
@@ -53,7 +53,6 @@ const badgeEstado = (nombreEstado?: EstadoNombre, estado_id?: number) => {
   return <span className={cls}>{label}</span>;
 };
 
-// Acepta "14.078,-87.213" (con o sin espacios) o cae a la dirección
 const buildMapLinks = (coordenadas?: string, direccion?: string) => {
   const c = (coordenadas || "").trim();
   const latLngRegex = /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/;
@@ -89,25 +88,35 @@ const GestionClientes = () => {
   const itemsPerPage = 10;
 
   const obtenerOInicializarEstados = async (clienteId: number, anio: number): Promise<EstadoMensual[]> => {
-    const response = await fetch(`${apiHost}/api/estado-mensual/cliente/${clienteId}/anio/${anio}`);
-    const estados = await response.json();
-
-    if (Array.isArray(estados) && estados.length > 0) return estados;
+    try {
+      const response = await fetch(`${apiHost}/api/estado-mensual/cliente/${clienteId}/anio/${anio}`);
+      if (response.ok) {
+        const estados = await response.json();
+        if (Array.isArray(estados) && estados.length > 0) return estados;
+      }
+    } catch (error) {
+      console.error("Error al obtener estados:", error);
+    }
 
     // Inicializa 12 meses si no existen
     const nuevosEstados = await Promise.all(
       Array.from({ length: 12 }, async (_, i) => {
         const mes = i + 1;
-        const res = await fetch(`${apiHost}/api/estado-mensual`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cliente_id: clienteId, mes, anio, estado: "Pendiente" }),
-        });
-        return res.ok ? { mes, anio, estado: "Pendiente" } : null;
+        try {
+          const res = await fetch(`${apiHost}/api/estado-mensual`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cliente_id: clienteId, mes, anio, estado: "Pendiente" }),
+          });
+          return res.ok ? { mes, anio, estado: "Pendiente" } : null;
+        } catch (error) {
+          console.error("Error al crear estado:", error);
+          return null;
+        }
       })
     );
 
-    return (nuevosEstados.filter(Boolean) as EstadoMensual[]) ?? [];
+    return nuevosEstados.filter(Boolean) as EstadoMensual[];
   };
 
   const fetchClientes = async () => {
@@ -119,24 +128,28 @@ const GestionClientes = () => {
       const year = new Date().getFullYear();
       const clientesConEstados = await Promise.all(
         data.map(async (cliente: Cliente) => {
-          const estados = await obtenerOInicializarEstados(cliente.id, year);
-          return { ...cliente, estados };
+          try {
+            const estados = await obtenerOInicializarEstados(cliente.id, year);
+            return { ...cliente, estados };
+          } catch (error) {
+            console.error(`Error con cliente ${cliente.id}:`, error);
+            return { ...cliente, estados: [] };
+          }
         })
       );
       setClientes(clientesConEstados);
-      setClientesFiltrados(clientesConEstados); // Inicializar clientes filtrados con todos los clientes
+      setClientesFiltrados(clientesConEstados);
     } catch (err) {
-      console.error("Error al obtener clientes o estados:", err);
+      console.error("Error al obtener clientes:", err);
       setError("No se pudo cargar la lista de clientes.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Función para manejar la búsqueda
   const handleSearch = (searchTerm: string) => {
     if (!searchTerm.trim()) {
-      setClientesFiltrados(clientes); // Si no hay término de búsqueda, mostrar todos
+      setClientesFiltrados(clientes);
       setCurrentPage(1);
       return;
     }
@@ -148,15 +161,12 @@ const GestionClientes = () => {
       cliente.direccion.toLowerCase().includes(term) ||
       (cliente.descripcion && cliente.descripcion.toLowerCase().includes(term))
     );
-    
+
     setClientesFiltrados(filtered);
-    setCurrentPage(1); // Resetear a la primera página al buscar
+    setCurrentPage(1);
   };
 
-  // Obtener nombres de clientes para las sugerencias (opcional, si quieres mantener el dropdown)
   const clientNames = clientes.map(cliente => cliente.nombre);
-
-  // Calcular clientes para la página actual
   const indexOfLastClient = currentPage * itemsPerPage;
   const indexOfFirstClient = indexOfLastClient - itemsPerPage;
   const currentClients = clientesFiltrados.slice(indexOfFirstClient, indexOfLastClient);
@@ -171,20 +181,30 @@ const GestionClientes = () => {
 
   return (
     <AdminLayout>
-      <div className="px-4 sm:px-6 lg:px-8">
-        {/* Acciones top: apila en móvil, distribuye en sm+ */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
-          <h1 className="text-xl sm:text-2xl font-bold text-orange-600">Gestión de Clientes</h1>
+      {/* Contenedor principal con mejor espaciado */}
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        
+        {/* Header con título y botón */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-orange-600">Gestión de Clientes</h1>
+            <p className="text-sm text-slate-600 mt-2">
+              Consulta el estado de los clientes y gestiona sus pagos
+            </p>
+          </div>
           <Link
             href="/pages/admin/clientes/registrar"
-            className="inline-flex justify-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            className="inline-flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
           >
-            + Registrar Cliente
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Nuevo Cliente
           </Link>
         </div>
 
         {/* Barra de búsqueda */}
-        <div className="mb-6">
+        <div className="mb-8">
           <SearchDropdown
             items={clientNames}
             placeholder="Buscar por nombre, teléfono, dirección o estado..."
@@ -193,253 +213,236 @@ const GestionClientes = () => {
           />
         </div>
 
-        <div className="w-full bg-white p-4 sm:p-6 lg:p-8 rounded-2xl shadow-xl border border-orange-300">
-          <p className="text-sm sm:text-base lg:text-lg text-slate-700 mb-4 sm:mb-6 text-center">
-            Consulta el estado de los clientes y gestiona sus pagos.
-          </p>
-
+        {/* Contenido principal */}
+        <div className="bg-white rounded-2xl shadow-lg border border-orange-200 p-6">
           {loading ? (
-            <p className="text-center text-slate-500">Cargando clientes...</p>
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mx-auto"></div>
+              <p className="text-slate-600 mt-4">Cargando clientes...</p>
+            </div>
           ) : error ? (
-            <p className="text-center text-red-500">{error}</p>
+            <div className="text-center py-12">
+              <p className="text-red-600 text-lg mb-4">{error}</p>
+              <button
+                onClick={fetchClientes}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              >
+                Reintentar
+              </button>
+            </div>
           ) : clientes.length === 0 ? (
-            <p className="text-center text-slate-500">No hay clientes registrados.</p>
+            <div className="text-center py-12">
+              <p className="text-slate-600 text-lg mb-4">No hay clientes registrados.</p>
+              <Link
+                href="/pages/admin/clientes/registrar"
+                className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                Registrar primer cliente
+              </Link>
+            </div>
           ) : (
             <>
-              {/* Mostrar mensaje si no hay resultados de búsqueda */}
               {clientesFiltrados.length === 0 && (
-                <p className="text-center text-slate-500 mb-4">
-                  No se encontraron clientes que coincidan con la búsqueda.
-                </p>
+                <div className="mb-6 p-4 bg-slate-50 rounded-lg">
+                  <p className="text-slate-600 text-center">
+                    No se encontraron clientes que coincidan con la búsqueda.
+                  </p>
+                </div>
               )}
 
-              {/* ===== Móvil / tablets pequeñas: tarjetas ===== */}
-              <div className="grid gap-3 sm:gap-4 md:hidden">
+              {/* Vista móvil */}
+              <div className="grid gap-4 md:hidden">
                 {currentClients.map((cliente) => {
                   const anio = aniosCliente[cliente.id] || anioActual;
                   const maps = buildMapLinks(cliente.coordenadas, cliente.direccion);
+                  
                   return (
-                    <section
+                    <div
                       key={cliente.id}
-                      className="rounded-xl border border-slate-200 p-3 sm:p-4 shadow-sm hover:shadow-md transition"
-                      aria-label={`Cliente ${cliente.nombre}`}
+                      className="rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <h3 className="text-base sm:text-lg font-semibold text-orange-700 truncate">
+                      {/* Header de la tarjeta */}
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-lg font-semibold text-orange-700 truncate">
                             {cliente.nombre}
                           </h3>
-                          <p className="text-xs sm:text-sm text-slate-600 truncate">{cliente.telefono}</p>
-                          <p className="text-xs sm:text-sm text-slate-500 break-words">{cliente.direccion}</p>
-
-                          {/* Ubicación (móvil) */}
-                          {maps ? (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <a
-                                href={maps.gmaps}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[11px] sm:text-xs px-2 py-1 rounded border border-blue-300 text-blue-700 hover:bg-blue-50"
-                              >
-                                Google Maps
-                              </a>
-                            </div>
-                          ) : (
-                            <span className="mt-2 block text-[11px] text-gray-400 italic">Sin ubicación</span>
-                          )}
+                          <p className="text-sm text-slate-600">{cliente.telefono}</p>
+                          <p className="text-sm text-slate-500 break-words mt-1">{cliente.direccion}</p>
                         </div>
-
                         <div className="shrink-0">
                           {badgeEstado(cliente.descripcion, cliente.estado_id)}
                         </div>
                       </div>
 
-                      {/* Controles de año */}
-                      <div className="flex items-center justify-between mt-3">
-                        <span className="text-[11px] sm:text-xs font-medium text-slate-500">Año: {anio}</span>
-                        <div className="flex gap-2 text-[11px] sm:text-xs">
-                          <button
-                            type="button"
-                            className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 active:scale-[0.98]"
-                            onClick={() => setAniosCliente((prev) => ({ ...prev, [cliente.id]: anio - 1 }))}
+                      {/* Ubicación */}
+                      {maps && (
+                        <div className="mb-4">
+                          <a
+                            href={maps.gmaps}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center text-xs text-blue-600 hover:text-blue-700"
                           >
-                            ← Año anterior
+                            📍 Ver en Google Maps
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Controles de año */}
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="text-sm font-medium text-slate-600">Año: {anio}</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setAniosCliente(prev => ({ ...prev, [cliente.id]: anio - 1 }))}
+                            className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
+                          >
+                            ← Anterior
                           </button>
                           <button
-                            type="button"
-                            className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 active:scale-[0.98]"
-                            onClick={() => setAniosCliente((prev) => ({ ...prev, [cliente.id]: anio + 1 }))}
+                            onClick={() => setAniosCliente(prev => ({ ...prev, [cliente.id]: anio + 1 }))}
+                            className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
                           >
-                            Año siguiente →
+                            Siguiente →
                           </button>
                         </div>
                       </div>
 
-                      {/* Estados mensuales (scroll horizontal) */}
-                      <div className="mt-3 -mx-1 overflow-x-auto">
-                        <div className="flex items-center gap-2 px-1 py-1">
-                          {["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sept", "Oct", "Nov", "Dic"].map((mesTxt, i) => {
-                            const e = cliente.estados?.find((x) => x.mes === i + 1 && x.anio === anio);
-                            let cls = "text-slate-400 border-slate-300";
-                            if (e?.estado === "Pagado") cls = "text-green-700 border-green-300";
-                            else if (e?.estado === "Pagado Parcial") cls = "text-yellow-600 border-yellow-300";
-                            else if (e?.estado === "Pendiente") cls = "text-red-600 border-red-300";
+                      {/* Estados mensuales */}
+                      <div className="mb-4">
+                        <div className="grid grid-cols-4 gap-2">
+                          {["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"].map((mes, index) => {
+                            const estado = cliente.estados?.find(e => e.mes === index + 1 && e.anio === anio);
+                            let bgColor = "bg-slate-100";
+                            let textColor = "text-slate-600";
+                            
+                            if (estado?.estado === "Pagado") {
+                              bgColor = "bg-green-100";
+                              textColor = "text-green-700";
+                            } else if (estado?.estado === "Pagado Parcial") {
+                              bgColor = "bg-yellow-100";
+                              textColor = "text-yellow-700";
+                            } else if (estado?.estado === "Pendiente") {
+                              bgColor = "bg-red-100";
+                              textColor = "text-red-700";
+                            }
+
                             return (
                               <div
-                                key={i}
-                                className={`min-w-[48px] sm:min-w-[56px] text-center border rounded-md px-2 py-1 text-[11px] sm:text-xs ${cls}`}
-                                title={e?.estado || "Sin estado"}
+                                key={index}
+                                className={`p-2 rounded text-center ${bgColor} ${textColor}`}
+                                title={estado?.estado || "Sin estado"}
                               >
-                                <div className="font-medium">{mesTxt}</div>
-                                <div className="leading-4">{(e?.estado && e.estado.split(" ")[0]) || "-"}</div>
+                                <div className="text-xs font-semibold">{mes}</div>
+                                <div className="text-[10px] mt-1">
+                                  {estado?.estado?.charAt(0) || "-"}
+                                </div>
                               </div>
                             );
                           })}
                         </div>
                       </div>
 
-                      {/* Acción */}
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          type="button"
-                          className="text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-xs sm:text-sm"
-                          onClick={() => setModalCliente(cliente)}
-                        >
-                          VER MÁS
-                        </button>
-                      </div>
-                    </section>
+                      {/* Botón de acción */}
+                      <button
+                        onClick={() => setModalCliente(cliente)}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium"
+                      >
+                        Ver detalles
+                      </button>
+                    </div>
                   );
                 })}
               </div>
 
-              {/* ===== md+ : tabla completa ===== */}
+              {/* Vista desktop */}
               <div className="hidden md:block">
-                <div className="overflow-x-auto">
-                  <table className="min-w-[900px] w-full text-sm text-left border-collapse border border-gray-300">
+                <div className="overflow-x-auto rounded-lg">
+                  <table className="w-full text-sm border-collapse">
                     <thead className="bg-orange-100">
                       <tr>
-                        <th className="px-3 py-2 border">Cliente Id</th>
-                        <th className="px-3 py-2 border">Nombre</th>
-                        <th className="px-3 py-2 border">Teléfono</th>
-                        <th className="px-3 py-2 border">Dirección</th>
-                        <th className="px-3 py-2 border">Ubicación</th>
-                        <th className="px-3 py-2 border">Estado</th>
-                        <th className="px-3 py-2 border">Estados de Pago</th>
+                        <th className="px-4 py-3 text-left font-semibold">ID</th>
+                        <th className="px-4 py-3 text-left font-semibold">Nombre</th>
+                        <th className="px-4 py-3 text-left font-semibold">Teléfono</th>
+                        <th className="px-4 py-3 text-left font-semibold">Dirección</th>
+                        <th className="px-4 py-3 text-left font-semibold">Ubicación</th>
+                        <th className="px-4 py-3 text-left font-semibold">Estado</th>
+                        <th className="px-4 py-3 text-left font-semibold">Estados de Pago</th>
+                        <th className="px-4 py-3 text-left font-semibold">Acciones</th>
                       </tr>
                     </thead>
-
-                    <tbody>
+                    <tbody className="divide-y divide-slate-200">
                       {currentClients.map((cliente) => {
+                        const anio = aniosCliente[cliente.id] || anioActual;
                         const maps = buildMapLinks(cliente.coordenadas, cliente.direccion);
+                        
                         return (
                           <tr key={cliente.id} className="hover:bg-orange-50">
-                            <td className="px-3 py-2 border font-medium">{cliente.id}</td>
-                            <td className="px-3 py-2 border font-medium text-orange-700">{cliente.nombre}</td>
-                            <td className="px-3 py-2 border">{cliente.telefono}</td>
-                            <td className="px-3 py-2 border break-words">{cliente.direccion}</td>
-
-                            {/* Ubicación */}
-                            <td className="px-3 py-2 border">
+                            <td className="px-4 py-3 font-medium">{cliente.id}</td>
+                            <td className="px-4 py-3 font-medium text-orange-700">{cliente.nombre}</td>
+                            <td className="px-4 py-3">{cliente.telefono}</td>
+                            <td className="px-4 py-3 break-words max-w-xs">{cliente.direccion}</td>
+                            <td className="px-4 py-3">
                               {maps ? (
-                                <div className="flex flex-col gap-1">
-                                  <a
-                                    href={maps.gmaps}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 underline text-xs"
-                                    title={`Abrir en Google Maps: ${maps.label}`}
+                                <a
+                                  href={maps.gmaps}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-700 text-xs"
+                                >
+                                  Ver ubicación
+                                </a>
+                              ) : (
+                                <span className="text-slate-400 text-xs">Sin ubicación</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">{badgeEstado(cliente.descripcion, cliente.estado_id)}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-sm text-slate-600">Año: {anio}</span>
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => setAniosCliente(prev => ({ ...prev, [cliente.id]: anio - 1 }))}
+                                    className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
                                   >
-                                    Ver en Google Maps
-                                  </a>
+                                    ←
+                                  </button>
+                                  <button
+                                    onClick={() => setAniosCliente(prev => ({ ...prev, [cliente.id]: anio + 1 }))}
+                                    className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
+                                  >
+                                    →
+                                  </button>
                                 </div>
-                              ) : (
-                                <span className="text-gray-400 italic text-xs">Sin ubicación</span>
-                              )}
-                            </td>
+                              </div>
+                              <div className="grid grid-cols-6 gap-1">
+                                {["E", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"].map((mes, index) => {
+                                  const estado = cliente.estados?.find(e => e.mes === index + 1 && e.anio === anio);
+                                  let color = "bg-slate-100 text-slate-600";
+                                  
+                                  if (estado?.estado === "Pagado") color = "bg-green-100 text-green-700";
+                                  else if (estado?.estado === "Pagado Parcial") color = "bg-yellow-100 text-yellow-700";
+                                  else if (estado?.estado === "Pendiente") color = "bg-red-100 text-red-700";
 
-                            <td className="px-3 py-2 border">
-                              {badgeEstado(cliente.descripcion, cliente.estado_id)}
-                            </td>
-
-                            {/* Estados de pago (subtabla) */}
-                            <td className="px-3 py-2 border">
-                              {cliente.estados && cliente.estados.length > 0 ? (
-                                <div className="overflow-x-auto">
-                                  <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2 mb-1">
-                                    <span className="text-xs font-medium text-slate-500">
-                                      Año: {aniosCliente[cliente.id] || anioActual}
-                                    </span>
-                                    <div className="flex gap-2 text-xs">
-                                      <button
-                                        type="button"
-                                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                                        onClick={() =>
-                                          setAniosCliente((prev) => ({
-                                            ...prev,
-                                            [cliente.id]: (prev[cliente.id] || anioActual) - 1,
-                                          }))
-                                        }
-                                      >
-                                        ← Año anterior
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                                        onClick={() =>
-                                          setAniosCliente((prev) => ({
-                                            ...prev,
-                                            [cliente.id]: (prev[cliente.id] || anioActual) + 1,
-                                          }))
-                                        }
-                                      >
-                                        Año siguiente →
-                                      </button>
+                                  return (
+                                    <div
+                                      key={index}
+                                      className={`p-1 rounded text-center text-xs ${color}`}
+                                      title={`${["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][index]}: ${estado?.estado || "Sin estado"}`}
+                                    >
+                                      {mes}
                                     </div>
-                                  </div>
-
-                                  <table className="table-auto border border-collapse text-center text-xs w-full">
-                                    <thead className="bg-slate-100">
-                                      <tr>
-                                        {["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sept", "Oct", "Nov", "Dic"].map((mes, idx) => (
-                                          <th key={idx} className="px-1 py-1 border border-slate-300 min-w-[40px]">
-                                            {mes}
-                                          </th>
-                                        ))}
-                                        <th className="px-2 py-1 border border-slate-300">Acción</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      <tr>
-                                        {Array.from({ length: 12 }, (_, i) => {
-                                          const anio = aniosCliente[cliente.id] || anioActual;
-                                          const estado = cliente.estados.find((e) => e.mes === i + 1 && e.anio === anio);
-                                          let color = "text-gray-400";
-                                          if (estado?.estado === "Pagado") color = "text-green-600 font-semibold";
-                                          else if (estado?.estado === "Pagado Parcial") color = "text-yellow-500 font-semibold";
-                                          else if (estado?.estado === "Pendiente") color = "text-red-500 font-semibold";
-                                          return (
-                                            <td key={i} className={`border px-1 py-1 ${color}`}>
-                                              {estado?.estado?.split(" ")[0] || "-"}
-                                            </td>
-                                          );
-                                        })}
-                                        <td className="border px-2 py-1 text-center">
-                                          <button
-                                            type="button"
-                                            className="text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-xs"
-                                            onClick={() => setModalCliente(cliente)}
-                                          >
-                                            VER MÁS
-                                          </button>
-                                        </td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ) : (
-                                <span className="text-gray-400 italic">Sin historial</span>
-                              )}
+                                  );
+                                })}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                onClick={() => setModalCliente(cliente)}
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs"
+                              >
+                                Ver
+                              </button>
                             </td>
                           </tr>
                         );
@@ -447,7 +450,11 @@ const GestionClientes = () => {
                     </tbody>
                   </table>
                 </div>
-                <div className="flex justify-center mt-4">
+              </div>
+
+              {/* Paginación */}
+              {clientesFiltrados.length > itemsPerPage && (
+                <div className="mt-8">
                   <Pagination
                     currentPage={currentPage}
                     totalItems={clientesFiltrados.length}
@@ -455,7 +462,7 @@ const GestionClientes = () => {
                     onPageChange={handlePageChange}
                   />
                 </div>
-              </div>
+              )}
             </>
           )}
         </div>
