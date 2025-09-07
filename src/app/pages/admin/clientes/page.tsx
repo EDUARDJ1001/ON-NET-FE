@@ -6,6 +6,7 @@ import Link from "next/link";
 import ClienteModal from "./components/clienteModal";
 import Pagination from "@/app/components/pagination";
 import SearchDropdown from "@/app/components/searchBar";
+import Swal from "sweetalert2";
 
 const apiHost = process.env.NEXT_PUBLIC_API_HOST as string;
 
@@ -26,7 +27,9 @@ interface Cliente {
   pass_onu: string;
   coordenadas: string;
   plan_id: number;
+  dia_pago: number;
   estado_id?: number;
+  fecha_instalacion: string;
   descripcion?: EstadoNombre;
   estados: EstadoMensual[];
 }
@@ -164,6 +167,61 @@ const GestionClientes = () => {
 
     setClientesFiltrados(filtered);
     setCurrentPage(1);
+  };
+
+  const handleEliminar = async (id: number) => {
+    // Buscar el cliente en el estado actual
+    const clienteAEliminar = clientes.find(cliente => cliente.id === id);
+
+    if (!clienteAEliminar) {
+      await Swal.fire(
+        'Error',
+        'No se encontró el cliente a eliminar',
+        'error'
+      );
+      return;
+    }
+
+    const result = await Swal.fire({
+      title: '¿Estás seguro?',
+      html: `Estás a punto de eliminar al cliente: <br><strong>${clienteAEliminar.nombre}</strong>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      focusCancel: true
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const response = await fetch(`${apiHost}/api/clientes/${id}`, {
+          method: "DELETE",
+        });
+
+        if (!response.ok) {
+          throw new Error("Error en la respuesta del servidor");
+        }
+
+        // Actualizar el estado eliminando el cliente
+        setClientes(clientes.filter((cliente) => cliente.id !== id));
+        setClientesFiltrados(clientesFiltrados.filter((cliente) => cliente.id !== id));
+
+        await Swal.fire(
+          '¡Eliminado!',
+          `El cliente <strong>${clienteAEliminar.nombre}</strong> ha sido eliminado correctamente.`,
+          'success'
+        );
+      } catch (error) {
+        console.error("Error al eliminar cliente:", error);
+        await Swal.fire(
+          'Error',
+          `No se pudo eliminar a ${clienteAEliminar.nombre}`,
+          'error'
+        );
+      }
+    }
   };
 
   const clientNames = clientes.map(cliente => cliente.nombre);
@@ -343,13 +401,21 @@ const GestionClientes = () => {
                         </div>
                       </div>
 
-                      {/* Botón de acción */}
-                      <button
-                        onClick={() => setModalCliente(cliente)}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium"
-                      >
-                        Ver detalles
-                      </button>
+                      {/* Botones de acción */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setModalCliente(cliente)}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium"
+                        >
+                          Ver detalles
+                        </button>
+                        <button
+                          onClick={() => handleEliminar(cliente.id)}
+                          className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-medium"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -437,12 +503,20 @@ const GestionClientes = () => {
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <button
-                                onClick={() => setModalCliente(cliente)}
-                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs"
-                              >
-                                Ver
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => setModalCliente(cliente)}
+                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs"
+                                >
+                                  Ver
+                                </button>
+                                <button
+                                  onClick={() => handleEliminar(cliente.id)}
+                                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs"
+                                >
+                                  Eliminar
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );

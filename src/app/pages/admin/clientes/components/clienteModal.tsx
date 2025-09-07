@@ -17,7 +17,9 @@ interface Cliente {
   pass_onu: string;
   coordenadas: string;
   plan_id: number;
+  dia_pago: number;
   estados: Estado[];
+  fecha_instalacion: string; 
 }
 
 interface ClienteModalProps {
@@ -111,10 +113,16 @@ const ClienteModal = ({
     setGuardando(true);
     setMensaje("");
     try {
+      // Asegurarse de que la fecha esté en formato YYYY-MM-DD
+      const datosParaEnviar = {
+        ...form,
+        fecha_instalacion: form.fecha_instalacion.split('T')[0] // Solo la parte de la fecha
+      };
+
       const res = await fetch(`${apiHost}/api/clientes/${cliente.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(datosParaEnviar),
       });
 
       if (!res.ok) throw new Error("Error al actualizar cliente");
@@ -178,24 +186,8 @@ const ClienteModal = ({
                 value={form.nombre ?? ""}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
-                  !editando ? "bg-gray-100" : ""
-                }`}
-              />
-            </div>
-
-            {/* ip */}
-            <div className="flex flex-col">
-              <label className="text-xs font-medium text-slate-600 mb-1">IP</label>
-              <input
-                type="text"
-                name="ip"
-                value={form.ip ?? ""}
-                onChange={handleChange}
-                readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
-                  !editando ? "bg-gray-100" : ""
-                }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
+                  }`}
               />
             </div>
 
@@ -208,9 +200,38 @@ const ClienteModal = ({
                 value={form.telefono ?? ""}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
-                  !editando ? "bg-gray-100" : ""
-                }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
+                  }`}
+              />
+            </div>
+
+            {/* Fecha de instalación - NUEVO CAMPO */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-slate-600 mb-1">
+                Fecha de instalación
+              </label>
+              <input
+                type="date"
+                name="fecha_instalacion"
+                value={form.fecha_instalacion ?? ""}
+                onChange={handleChange}
+                readOnly={!editando}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
+                  }`}
+              />
+            </div>
+
+            {/* ip */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-slate-600 mb-1">IP</label>
+              <input
+                type="text"
+                name="ip"
+                value={form.ip ?? ""}
+                onChange={handleChange}
+                readOnly={!editando}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
+                  }`}
               />
             </div>
 
@@ -223,9 +244,8 @@ const ClienteModal = ({
                 value={form.coordenadas ?? ""}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
-                  !editando ? "bg-gray-100" : ""
-                }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
+                  }`}
               />
             </div>
 
@@ -237,14 +257,13 @@ const ClienteModal = ({
                 value={form.direccion ?? ""}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md min-h-[72px] resize-y focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
-                  !editando ? "bg-gray-100" : ""
-                }`}
+                className={`w-full px-3 py-2 border rounded-md min-h-[72px] resize-y focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
+                  }`}
               />
             </div>
 
             {/* Password ONU */}
-            <div className="flex flex-col md:col-span-2">
+            <div className="flex flex-col">
               <label className="text-xs font-medium text-slate-600 mb-1">Contraseña ONU</label>
               <input
                 type="text"
@@ -252,23 +271,21 @@ const ClienteModal = ({
                 value={form.pass_onu ?? ""}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
-                  !editando ? "bg-gray-100" : ""
-                }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
+                  }`}
               />
             </div>
 
             {/* plan */}
-            <div className="flex flex-col md:col-span-2">
+            <div className="flex flex-col">
               <label className="text-xs font-medium text-slate-700 mb-1">Plan</label>
               <select
                 name="plan_id"
                 value={form.plan_id ?? ""}
                 onChange={handleChange}
                 disabled={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
-                  !editando ? "bg-gray-100 text-gray-500" : ""
-                }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100 text-gray-500" : ""
+                  }`}
               >
                 <option value="">Selecciona un plan</option>
                 {planes.map((plan) => (
@@ -278,7 +295,22 @@ const ClienteModal = ({
                 ))}
               </select>
             </div>
+
+            {/* Fecha Pago */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-slate-600 mb-1">Dia de Pago</label>
+              <input
+                type="text"
+                name="dia_pago"
+                value={form.dia_pago ?? ""}
+                onChange={handleChange}
+                readOnly={!editando}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
+                  }`}
+              />
+            </div>
           </div>
+          
 
           {/* Estados de pago */}
           <div className="mt-6">
@@ -298,8 +330,8 @@ const ClienteModal = ({
                         e.estado === "Pagado"
                           ? "text-green-600 font-semibold"
                           : e.estado === "Pagado Parcial"
-                          ? "text-yellow-600 font-semibold"
-                          : "text-red-600 font-semibold"
+                            ? "text-yellow-600 font-semibold"
+                            : "text-red-600 font-semibold"
                       }
                     >
                       {e.estado}

@@ -11,6 +11,7 @@ interface EstadoMensual {
     mes: number;
     anio: number;
     estado: string;
+    total_pagado?: number;
 }
 
 interface Plan {
@@ -35,6 +36,12 @@ interface MetodoPago {
     descripcion: string;
 }
 
+interface MesSeleccionado {
+    mes: number;
+    anio: number;
+    seleccionado: boolean;
+}
+
 const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
 const RegistrarPago = () => {
@@ -49,42 +56,38 @@ const RegistrarPago = () => {
     const [plan, setPlan] = useState<Plan | null>(null);
     const [metodoId, setMetodoId] = useState<number | null>(null);
     const [metodosPago, setMetodosPago] = useState<MetodoPago[]>([]);
+    const [mesesPendientes, setMesesPendientes] = useState<EstadoMensual[]>([]);
 
     const now = new Date();
-    const [anioAplicado, setAnioAplicado] = useState(now.getFullYear());
-    const [mesAplicado, setMesAplicado] = useState(now.getMonth() + 1);
     const [fechaPago, setFechaPago] = useState(now.toISOString().split('T')[0]);
-
-    const [monto, setMonto] = useState<number>(0);
+    const [montoTotal, setMontoTotal] = useState<number>(0);
     const [referencia, setReferencia] = useState("");
     const [observacion, setObservacion] = useState("");
     const [recibido, setRecibido] = useState<number>(0);
+    const [mesesSeleccionados, setMesesSeleccionados] = useState<MesSeleccionado[]>([]);
+    const [modoMultiplesMeses, setModoMultiplesMeses] = useState(false);
 
     const [loading, setLoading] = useState(false);
     const [loadingCliente, setLoadingCliente] = useState(false);
     const [loadingMetodos, setLoadingMetodos] = useState(false);
+    const [loadingMeses, setLoadingMeses] = useState(false);
     const [error, setError] = useState<string>("");
     const [okMsg, setOkMsg] = useState<string>("");
 
     const cambio = useMemo(() => {
-        const c = (recibido || 0) - (monto || 0);
+        const c = (recibido || 0) - (montoTotal || 0);
         return isNaN(c) ? 0 : c;
-    }, [recibido, monto]);
+    }, [recibido, montoTotal]);
 
-    // Validar si el mes aplicado es futuro
-    const isMesFuturo = useMemo(() => {
-        const selectedDate = new Date(anioAplicado, mesAplicado - 1, 1);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return selectedDate > today;
-    }, [mesAplicado, anioAplicado]);
+    const mesesSeleccionadosCount = useMemo(() => 
+        mesesSeleccionados.filter(m => m.seleccionado).length, 
+        [mesesSeleccionados]
+    );
 
-    // Función para cargar cliente desde el input
-    const handleCargarCliente = () => {
-        if (clienteIdInput && !isNaN(Number(clienteIdInput))) {
-            setClienteId(Number(clienteIdInput));
-        }
-    };
+    const montoPorMes = useMemo(() => {
+        if (mesesSeleccionadosCount === 0) return 0;
+        return montoTotal / mesesSeleccionadosCount;
+    }, [montoTotal, mesesSeleccionadosCount]);
 
     // Cargar métodos de pago
     useEffect(() => {
@@ -112,6 +115,13 @@ const RegistrarPago = () => {
         fetchMetodosPago();
     }, []);
 
+    // Cargar meses pendientes cuando cambia el cliente
+    useEffect(() => {
+        if (clienteId) {
+            fetchMesesPendientes(clienteId);
+        }
+    }, [clienteId]);
+
     // Cargar cliente
     const fetchCliente = async (id: number) => {
         setLoadingCliente(true);
@@ -124,16 +134,16 @@ const RegistrarPago = () => {
 
             if (data.plan && typeof data.plan.precio_mensual === "number") {
                 setPlan(data.plan);
-                setMonto(Number(data.plan.precio_mensual || 0));
+                setMontoTotal(Number(data.plan.precio_mensual || 0));
             } else {
                 const pr = await fetch(`${apiHost}/api/planes/${data.plan_id}`);
                 if (pr.ok) {
                     const p: Plan = await pr.json();
                     setPlan(p);
-                    setMonto(Number(p.precio_mensual || 0));
+                    setMontoTotal(Number(p.precio_mensual || 0));
                 } else {
                     setPlan(null);
-                    setMonto(0);
+                    setMontoTotal(0);
                 }
             }
         } catch (e) {
@@ -145,11 +155,66 @@ const RegistrarPago = () => {
         }
     };
 
+    // Cargar meses pendientes
+    const fetchMesesPendientes = async (clienteId: number) => {
+        setLoadingMeses(true);
+        try {
+            const res = await fetch(`${apiHost}/api/pagos/meses-pendientes/${clienteId}`);
+            if (res.ok) {
+                const data: EstadoMensual[] = await res.json();
+                setMesesPendientes(data);
+                
+                // Inicializar meses seleccionados
+                const currentYear = new Date().getFullYear();
+                const meses = data
+                    .filter(mes => new Date(mes.anio, mes.mes - 1, 1) <= new Date())
+                    .map(mes => ({
+                        mes: mes.mes,
+                        anio: mes.anio,
+                        seleccionado: false
+                    }));
+                
+                setMesesSeleccionados(meses);
+            }
+        } catch (error) {
+            console.error("Error al cargar meses pendientes:", error);
+        } finally {
+            setLoadingMeses(false);
+        }
+    };
+
+    // Función para cargar cliente desde el input
+    const handleCargarCliente = () => {
+        if (clienteIdInput && !isNaN(Number(clienteIdInput))) {
+            setClienteId(Number(clienteIdInput));
+        }
+    };
+
     useEffect(() => {
         if (clienteId) {
             fetchCliente(clienteId);
         }
     }, [clienteId]);
+
+    const toggleMesSeleccionado = (index: number) => {
+        const nuevosMeses = [...mesesSeleccionados];
+        nuevosMeses[index].seleccionado = !nuevosMeses[index].seleccionado;
+        setMesesSeleccionados(nuevosMeses);
+    };
+
+    const seleccionarTodosMeses = () => {
+        setMesesSeleccionados(prev => prev.map(mes => ({
+            ...mes,
+            seleccionado: true
+        })));
+    };
+
+    const deseleccionarTodosMeses = () => {
+        setMesesSeleccionados(prev => prev.map(mes => ({
+            ...mes,
+            seleccionado: false
+        })));
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -164,20 +229,8 @@ const RegistrarPago = () => {
             setError("Selecciona un método de pago.");
             return;
         }
-        if (!monto || monto <= 0) {
+        if (!montoTotal || montoTotal <= 0) {
             setError("El monto debe ser mayor a 0.");
-            return;
-        }
-        if (mesAplicado < 1 || mesAplicado > 12) {
-            setError("Selecciona un mes válido.");
-            return;
-        }
-        if (!anioAplicado || anioAplicado < 2000) {
-            setError("Selecciona un año válido.");
-            return;
-        }
-        if (isMesFuturo) {
-            setError("No se pueden registrar pagos para meses futuros.");
             return;
         }
         if (!fechaPago) {
@@ -185,42 +238,76 @@ const RegistrarPago = () => {
             return;
         }
 
+        if (modoMultiplesMeses && mesesSeleccionadosCount === 0) {
+            setError("Selecciona al menos un mes para aplicar el pago.");
+            return;
+        }
+
         setLoading(true);
         try {
-            const body = {
-                cliente_id: clienteId,
-                monto: Number(monto),
-                fecha_pago: fechaPago,
-                metodo_id: metodoId,
-                referencia: referencia || null,
-                observacion: observacion || null,
-                mes_aplicado: mesAplicado,
-                anio_aplicado: anioAplicado
-            };
+            if (modoMultiplesMeses) {
+                // Pago de múltiples meses
+                const mesesSeleccionadosData = mesesSeleccionados
+                    .filter(m => m.seleccionado)
+                    .map(m => ({ mes: m.mes, anio: m.anio }));
 
-            const res = await fetch(`${apiHost}/api/pagos`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-            });
+                const body = {
+                    cliente_id: clienteId,
+                    monto_total: Number(montoTotal),
+                    fecha_pago: fechaPago,
+                    metodo_id: metodoId,
+                    referencia: referencia || null,
+                    observacion: observacion || null,
+                    meses: mesesSeleccionadosData
+                };
 
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.message || "Error al registrar el pago");
+                const res = await fetch(`${apiHost}/api/pagos/multiples`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+
+                if (!res.ok) {
+                    const errorData = await res.json();
+                    throw new Error(errorData.message || "Error al registrar los pagos");
+                }
+
+                const result = await res.json();
+                setOkMsg(`✅ Pagos registrados con éxito para ${mesesSeleccionadosCount} meses.`);
+
+            } else {
+                // Pago de un solo mes (comportamiento original)
+                const body = {
+                    cliente_id: clienteId,
+                    monto: Number(montoTotal),
+                    fecha_pago: fechaPago,
+                    metodo_id: metodoId,
+                    referencia: referencia || null,
+                    observacion: observacion || null,
+                    mes_aplicado: mesesSeleccionados[0]?.mes || new Date().getMonth() + 1,
+                    anio_aplicado: mesesSeleccionados[0]?.anio || new Date().getFullYear()
+                };
+
+                const res = await fetch(`${apiHost}/api/pagos`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+
+                if (!res.ok) {
+                    const errorData = await res.json();
+                    throw new Error(errorData.message || "Error al registrar el pago");
+                }
+
+                const result = await res.json();
+                setOkMsg(`✅ Pago registrado con éxito para ${monthNames[result.mes_aplicado - 1]} ${result.anio_aplicado}.`);
             }
 
-            const result = await res.json();
-
-            setOkMsg(`✅ Pago registrado con éxito para ${monthNames[mesAplicado - 1]} ${anioAplicado}.`);
+            // Limpiar formulario
             setReferencia("");
             setObservacion("");
             setRecibido(0);
-
-            // Opcional: resetear a mes actual después de éxito
-            const now = new Date();
-            setMesAplicado(now.getMonth() + 1);
-            setAnioAplicado(now.getFullYear());
-            setFechaPago(now.toISOString().split('T')[0]);
+            setMesesSeleccionados(prev => prev.map(mes => ({ ...mes, seleccionado: false })));
 
         } catch (err) {
             console.error(err);
@@ -298,7 +385,9 @@ const RegistrarPago = () => {
                                     setClienteId(null);
                                     setClienteIdInput("");
                                     setPlan(null);
-                                    setMonto(0);
+                                    setMontoTotal(0);
+                                    setMesesSeleccionados([]);
+                                    setModoMultiplesMeses(false);
                                 }}
                                 className="absolute top-3 right-3 p-1 text-slate-400 hover:text-slate-600"
                                 title="Cambiar cliente"
@@ -336,7 +425,9 @@ const RegistrarPago = () => {
                                         setClienteId(null);
                                         setClienteIdInput("");
                                         setPlan(null);
-                                        setMonto(0);
+                                        setMontoTotal(0);
+                                        setMesesSeleccionados([]);
+                                        setModoMultiplesMeses(false);
                                     }}
                                     className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
                                 >
@@ -363,6 +454,35 @@ const RegistrarPago = () => {
                             </button>
                         </div>
                     ) : null}
+
+                    {/* Selector de modo de pago */}
+                    {cliente && (
+                        <div className="mb-6">
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                                Tipo de Pago
+                            </label>
+                            <div className="flex gap-4">
+                                <label className="flex items-center">
+                                    <input
+                                        type="radio"
+                                        checked={!modoMultiplesMeses}
+                                        onChange={() => setModoMultiplesMeses(false)}
+                                        className="mr-2"
+                                    />
+                                    Pago de un mes
+                                </label>
+                                <label className="flex items-center">
+                                    <input
+                                        type="radio"
+                                        checked={modoMultiplesMeses}
+                                        onChange={() => setModoMultiplesMeses(true)}
+                                        className="mr-2"
+                                    />
+                                    Pago de múltiples meses
+                                </label>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Formulario de pago */}
                     <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -406,64 +526,79 @@ const RegistrarPago = () => {
                             )}
                         </div>
 
-                        {/* Mes/Año aplicado */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">
-                                Mes a aplicar
-                            </label>
-                            <select
-                                value={mesAplicado}
-                                onChange={(e) => setMesAplicado(Number(e.target.value))}
-                                className="w-full px-3 py-2 border rounded-md bg-white"
-                            >
-                                {monthNames.map((m, idx) => (
-                                    <option key={m} value={idx + 1}>
-                                        {m}
-                                    </option>
-                                ))}
-                            </select>
-                            {isMesFuturo && (
-                                <p className="mt-1 text-xs text-red-600">
-                                    ⚠️ Mes futuro seleccionado
-                                </p>
-                            )}
-                        </div>
+                        {/* Selección de meses */}
+                        {cliente && modoMultiplesMeses && (
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                    Meses a pagar ({mesesSeleccionadosCount} seleccionados)
+                                </label>
+                                
+                                {loadingMeses ? (
+                                    <p className="text-slate-500">Cargando meses pendientes...</p>
+                                ) : mesesSeleccionados.length === 0 ? (
+                                    <p className="text-slate-500">No hay meses pendientes de pago.</p>
+                                ) : (
+                                    <>
+                                        <div className="flex gap-2 mb-3">
+                                            <button
+                                                type="button"
+                                                onClick={seleccionarTodosMeses}
+                                                className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                                            >
+                                                Seleccionar todos
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={deseleccionarTodosMeses}
+                                                className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                                            >
+                                                Deseleccionar todos
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-2 border rounded">
+                                            {mesesSeleccionados.map((mes, index) => (
+                                                <label key={`${mes.mes}-${mes.anio}`} className="flex items-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={mes.seleccionado}
+                                                        onChange={() => toggleMesSeleccionado(index)}
+                                                        className="mr-2"
+                                                    />
+                                                    <span className="text-sm">
+                                                        {monthNames[mes.mes - 1]} {mes.anio}
+                                                    </span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
 
+                        {/* Monto Total / Recibido / Cambio */}
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">
-                                Año a aplicar
-                            </label>
-                            <input
-                                type="number"
-                                value={anioAplicado}
-                                onChange={(e) => setAnioAplicado(Number(e.target.value))}
-                                className="w-full px-3 py-2 border rounded-md"
-                                min={2000}
-                                max={2099}
-                            />
-                            {isMesFuturo && (
-                                <p className="mt-1 text-xs text-red-600">
-                                    ⚠️ No se permiten pagos futuros
-                                </p>
-                            )}
-                        </div>
-
-                        {/* Monto / Recibido / Cambio */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">
-                                Monto a pagar
+                                {modoMultiplesMeses ? 'Monto Total' : 'Monto a pagar'}
                             </label>
                             <input
                                 type="number"
                                 step="0.01"
                                 min={0}
-                                value={monto}
-                                onChange={(e) => setMonto(Number(e.target.value))}
+                                value={montoTotal}
+                                onChange={(e) => setMontoTotal(Number(e.target.value))}
                                 className="w-full px-3 py-2 border rounded-md"
                             />
-                            <p className="mt-1 text-xs text-slate-500">
-                                Sugerido por plan: L.{plan?.precio_mensual ?? 0}
-                            </p>
+                            {modoMultiplesMeses && mesesSeleccionadosCount > 0 && (
+                                <p className="mt-1 text-xs text-slate-500">
+                                    {mesesSeleccionadosCount} mes(es) × L.{montoPorMes.toFixed(2)} = L.{montoTotal.toFixed(2)}
+                                </p>
+                            )}
+                            {!modoMultiplesMeses && (
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Sugerido por plan: L.{plan?.precio_mensual ?? 0}
+                                </p>
+                            )}
                         </div>
 
                         <div>
@@ -514,10 +649,11 @@ const RegistrarPago = () => {
                         <div className="md:col-span-2 mt-2">
                             <button
                                 type="submit"
-                                disabled={loading || !clienteId || !metodoId || isMesFuturo}
+                                disabled={loading || !clienteId || !metodoId || (modoMultiplesMeses && mesesSeleccionadosCount === 0)}
                                 className="w-full md:w-auto px-6 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
                             >
-                                {loading ? "Registrando..." : "Registrar Pago"}
+                                {loading ? "Registrando..." : 
+                                    modoMultiplesMeses ? `Registrar ${mesesSeleccionadosCount} Pagos` : "Registrar Pago"}
                             </button>
                         </div>
                     </form>
