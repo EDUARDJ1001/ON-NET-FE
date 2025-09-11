@@ -57,7 +57,6 @@ export default function SidebarAdmin({
           <ul className="space-y-1">
             <Item href="/pages/admin/clientes" label="Gestión de Clientes" />
             <Item href="/pages/admin/empleados" label="Gestión de Empleados" />
-            <Item href="/pages/admin/reportes" label="Reportes Generales" />
             <Item href="/pages/admin/planes" label="Planes de Internet" />
           </ul>
         </div>
