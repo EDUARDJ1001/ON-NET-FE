@@ -19,7 +19,7 @@ interface Cliente {
   plan_id: number;
   dia_pago: number;
   estados: Estado[];
-  fecha_instalacion: string; 
+  fecha_instalacion: string;
 }
 
 interface ClienteModalProps {
@@ -57,6 +57,23 @@ const ClienteModal = ({
   const [guardando, setGuardando] = useState(false);
 
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  const toInputDate = (value?: string | null) => {
+    if (!value) return "";
+    // ya viene correcto
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+    // viene como DD/MM/YYYY
+    const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+
+    // viene como ISO (evitar desfases por zona horaria)
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return "";
+    const off = d.getTimezoneOffset();
+    const local = new Date(d.getTime() - off * 60000);
+    return local.toISOString().slice(0, 10);
+  };
 
   // Bloquear scroll del body mientras el modal está abierto
   useEffect(() => {
@@ -213,11 +230,10 @@ const ClienteModal = ({
               <input
                 type="date"
                 name="fecha_instalacion"
-                value={form.fecha_instalacion ?? ""}
+                value={toInputDate(form.fecha_instalacion)}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
-                  }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""}`}
               />
             </div>
 
@@ -310,7 +326,7 @@ const ClienteModal = ({
               />
             </div>
           </div>
-          
+
 
           {/* Estados de pago */}
           <div className="mt-6">
