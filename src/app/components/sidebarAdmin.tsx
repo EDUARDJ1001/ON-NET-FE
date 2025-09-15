@@ -68,6 +68,7 @@ export default function SidebarAdmin({
           <ul className="space-y-1">
             <Item href="/pages/admin/caja" label="Registrar Pago" />
             <Item href="/pages/admin/caja/historial" label="Historial de Pagos" />
+            <Item href="/pages/admin/caja/pendientes" label="Clientes Pendientes" />
           </ul>
         </div>
 
