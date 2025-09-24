@@ -489,6 +489,7 @@ const GestionClientes = () => {
                                   if (estado?.estado === "Pagado") color = "bg-green-100 text-green-700";
                                   else if (estado?.estado === "Pagado Parcial") color = "bg-yellow-100 text-yellow-700";
                                   else if (estado?.estado === "Pendiente") color = "bg-red-100 text-red-700";
+                                  else if (estado?.estado === "Suspendido") color = "bg-gray-400 text-gray-700";
 
                                   return (
                                     <div

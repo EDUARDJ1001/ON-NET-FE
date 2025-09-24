@@ -58,7 +58,12 @@ interface PagoMultipleItem {
 interface PagoMultipleResponse {
   message?: string;
   pagos?: PagoMultipleItem[];
-  total_meses?: number;
+  totales?: {
+    solicitados: number;
+    aplicados: number;
+    omitidos: number;
+  };
+  motivo_omision_posible?: string;
   monto_por_mes?: number[] | number;
 }
 
@@ -67,6 +72,8 @@ interface PagoSimpleResponse {
   id: number;
   mes_aplicado: number;
   anio_aplicado: number;
+  aplicado_a?: { mes: number; anio: number };
+  nota?: string;
 }
 
 interface FacturaData {
@@ -125,8 +132,8 @@ const html2pdfTyped = html2pdf as unknown as Html2Pdf;
 /** ============================================ */
 
 const monthNames = [
-  "Enero","Febrero","Marzo","Abril","Mayo","Junio",
-  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
 const fmt = (n: number | undefined | null) =>
@@ -192,12 +199,11 @@ export default function RegistrarPago() {
     return copia[0];
   }, [mesesSeleccionados]);
 
-  // Cargar catálogo de clientes para SearchSelect (id + nombre)
+  // Cargar catálogo de clientes para SearchSelect
   useEffect(() => {
     const cargarCatalogo = async () => {
       setLoadingCatalogo(true);
       try {
-        // Intenta un endpoint con limit; ajusta al de tu API
         const res = await fetch(`${apiHost}/api/clientes?limit=500&order=nombre`);
         if (!res.ok) throw new Error("No se pudo cargar el catálogo de clientes");
         const data: Cliente[] = await res.json();
@@ -328,6 +334,49 @@ export default function RegistrarPago() {
   };
   const getMesKey = (mes: number, anio: number) => `${mes}-${anio}`;
 
+  // Genera meses desde el mes siguiente hasta diciembre del año actual
+  const buildFuturosRestoDelAnio = () => {
+    const hoy = new Date();
+    const anio = hoy.getFullYear();
+    const mesInicio = hoy.getMonth() + 2; // siguiente mes (1..12)
+    const r: { mes: number; anio: number }[] = [];
+    for (let m = mesInicio; m <= 12; m++) r.push({ mes: m, anio });
+    return r;
+  };
+
+  // Genera los próximos N meses a partir del mes actual (incluye meses del siguiente año si hace falta)
+  const buildProximosMeses = (n: number) => {
+    const hoy = new Date();
+    let mes = hoy.getMonth() + 1; // 1..12
+    let anio = hoy.getFullYear();
+    const out: { mes: number; anio: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      // avanza al siguiente mes
+      mes++;
+      if (mes > 12) { mes = 1; anio++; }
+      out.push({ mes, anio });
+    }
+    return out;
+  };
+
+  // Inserta sin duplicar y opcionalmente los marca seleccionados
+  const mergeMesesEnSeleccionados = (
+    nuevos: { mes: number; anio: number }[],
+    seleccionado = false
+  ) => {
+    setMesesSeleccionados((prev) => {
+      const existe = new Set(prev.map(x => `${x.mes}-${x.anio}`));
+      const toAdd: MesSeleccionado[] = [];
+      for (const n of nuevos) {
+        const key = `${n.mes}-${n.anio}`;
+        if (!existe.has(key)) toAdd.push({ mes: n.mes, anio: n.anio, seleccionado });
+      }
+      const merged = [...prev, ...toAdd].sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes));
+      return merged;
+    });
+  };
+
+
   /** ===== Exportar PDF ===== */
   const exportarPDF = async () => {
     const source = pdfRef.current;
@@ -452,21 +501,31 @@ export default function RegistrarPago() {
         });
 
         if (!res.ok) {
-          const errorData: Partial<PagoMultipleResponse> = await res.json().catch(() => ({} as Partial<PagoMultipleResponse>));
+          const errorData: Partial<PagoMultipleResponse> = await res.json().catch(() => ({}));
           throw new Error(errorData.message || "Error al registrar los pagos");
         }
 
         const data: PagoMultipleResponse = await res.json();
 
-        const pagoIds: number[] | undefined = Array.isArray(data?.pagos)
-          ? data.pagos.map((p) => Number(p.id)).filter((v) => Number.isFinite(v))
-          : undefined;
+        const pagosAplicados = Array.isArray(data.pagos) ? data.pagos : [];
+        const pagoIds: number[] = pagosAplicados.map(p => Number(p.id)).filter(Number.isFinite);
 
-        setOkMsg(`✅ Pagos registrados con éxito para ${months.length} mes(es).`);
+        const solicitados = data.totales?.solicitados ?? months.length;
+        const aplicados = data.totales?.aplicados ?? pagosAplicados.length;
+        const omitidos = data.totales?.omitidos ?? (solicitados - aplicados);
+
+        let msg = `✅ Pagos registrados: ${aplicados}/${solicitados}. Omitidos: ${omitidos}.`;
+        if (omitidos > 0 && data.motivo_omision_posible) {
+          msg += ` (${data.motivo_omision_posible})`;
+        }
+        setOkMsg(msg);
+
+        // Refresca meses pendientes
         fetchMesesPendientes(clienteId);
 
+        // Para el PDF: usa los meses reales aplicados del backend
         setFactura({
-          numero: (pagoIds && pagoIds.length ? pagoIds[0] : Date.now()).toString(),
+          numero: (pagoIds[0] ?? Date.now()).toString(),
           fechaEmision: fechaPago,
           cliente: {
             id: clienteId,
@@ -479,7 +538,7 @@ export default function RegistrarPago() {
           referencia: referencia || null,
           observacion: observacion || null,
           tipo: "multiple",
-          meses: months.map((m) => ({ mes: m.mes, anio: m.anio })),
+          meses: pagosAplicados.map(p => ({ mes: p.mes_aplicado, anio: p.anio_aplicado })),
           pagoIds,
           total: Number(montoTotal),
           recibido: Number(recibido),
@@ -514,7 +573,13 @@ export default function RegistrarPago() {
 
         const result: PagoSimpleResponse = await res.json();
 
-        setOkMsg(`✅ Pago registrado para ${monthNames[(result.mes_aplicado as number) - 1]} ${result.anio_aplicado}.`);
+        const mesFinal = result.aplicado_a?.mes ?? result.mes_aplicado;
+        const anioFinal = result.aplicado_a?.anio ?? result.anio_aplicado;
+
+        let msg = `✅ Pago registrado para ${monthNames[mesFinal - 1]} ${anioFinal}.`;
+        if (result.nota) msg += ` (${result.nota})`;
+        setOkMsg(msg);
+
         fetchMesesPendientes(clienteId);
 
         setFactura({
@@ -531,8 +596,8 @@ export default function RegistrarPago() {
           referencia: referencia || null,
           observacion: observacion || null,
           tipo: "simple",
-          mes_aplicado: Number(result.mes_aplicado),
-          anio_aplicado: Number(result.anio_aplicado),
+          mes_aplicado: Number(mesFinal),
+          anio_aplicado: Number(anioFinal),
           pagoId: Number(result.id),
           total: Number(montoTotal),
           recibido: Number(recibido),
@@ -643,9 +708,9 @@ export default function RegistrarPago() {
               {!modoMultiplesMeses && (
                 <div className="mt-3 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-sm">
                   {mesMasAntiguoPendiente ? (
-                    <>Este pago se acreditará al <b>mes más antiguo pendiente</b>: {monthNames[mesMasAntiguoPendiente.mes - 1]} {mesMasAntiguoPendiente.anio}.</>
+                    <>Este pago se acreditará al <b>mes más antiguo pendiente</b>: {monthNames[mesMasAntiguoPendiente.mes - 1]} {mesMasAntiguoPendiente.anio}. <i>Si ese mes estuviera suspendido, se aplicará automáticamente al último mes pendiente no suspendido.</i></>
                   ) : (
-                    <>Este cliente no tiene meses pendientes hasta hoy. El pago se acreditará al <b>mes actual</b>.</>
+                    <>Este cliente no tiene meses pendientes hasta hoy. El pago se acreditará al <b>mes actual</b>. <i>Si el cliente tuviera estado Suspendido, se asignará automáticamente al último mes pendiente no suspendido.</i></>
                   )}
                 </div>
               )}
@@ -709,7 +774,7 @@ export default function RegistrarPago() {
                     onChange={() => setModoMultiplesMeses(true)}
                     className="mr-2"
                   />
-                  Pago de múltiples meses
+                  Pago de múltiples meses o clientes suspendidos
                 </label>
               </div>
             </div>
@@ -764,6 +829,17 @@ export default function RegistrarPago() {
                 ) : (
                   <>
                     <div className="flex gap-2 mb-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const futuros = buildFuturosRestoDelAnio();
+                          mergeMesesEnSeleccionados(futuros, false); // agrégalos sin seleccionar
+                        }}
+                        className="px-3 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+                        title="Agrega los meses restantes del año actual"
+                      >
+                        Agregar pago de meses adelantados
+                      </button>
                       <button
                         type="button"
                         onClick={() => toggleTodosMeses(true)}
@@ -874,8 +950,8 @@ export default function RegistrarPago() {
                 {loading
                   ? "Registrando..."
                   : modoMultiplesMeses
-                  ? `Registrar ${mesesSeleccionadosCount} Pago(s)`
-                  : "Registrar Pago"}
+                    ? `Registrar ${mesesSeleccionadosCount} Pago(s)`
+                    : "Registrar Pago"}
               </button>
 
               {factura && (
@@ -960,7 +1036,7 @@ export default function RegistrarPago() {
                   </div>
                   <div style={{ width: 260 }}>
                     <div className="pdf-title" style={{ marginBottom: 6 }}>Datos del cobro</div>
-                    <div className="pdf-subtle"><b>Fecha:</b> {factura.fechaEmision}</div>
+                    <div className="pdf-subtle"><b>Fecha:</b> {new Date().toLocaleString()}</div>
                     <div className="pdf-subtle"><b>Método:</b> {factura.metodoPago}</div>
                     {factura.referencia && <div className="pdf-subtle"><b>Referencia:</b> {factura.referencia}</div>}
                     {factura.plan?.nombre && (
