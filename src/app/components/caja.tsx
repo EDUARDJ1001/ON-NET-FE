@@ -158,6 +158,13 @@ export default function RegistrarPago() {
   const [loadingCatalogo, setLoadingCatalogo] = useState<boolean>(false);
 
   const now = new Date();
+  const getProximoMesYAno = () => {
+    const hoy = new Date();
+    let mes = hoy.getMonth() + 2; // siguiente
+    let anio = hoy.getFullYear();
+    if (mes > 12) { mes = 1; anio++; }
+    return { mes, anio };
+  };
   const [fechaPago, setFechaPago] = useState(now.toISOString().split("T")[0]);
   const [montoTotal, setMontoTotal] = useState<number>(0);
   const [referencia, setReferencia] = useState("");
@@ -301,6 +308,29 @@ export default function RegistrarPago() {
       setLoadingMeses(false);
     }
   };
+
+  // Reacción a clienteId
+  useEffect(() => {
+    const run = async () => {
+      if (!clienteId) return;
+      await fetchCliente(clienteId);
+      await fetchMesesPendientes(clienteId);
+
+      // si quedó sin pendientes, precarga futuros y cambia a múltiples
+      setMesesSeleccionados(prev => {
+        if (prev.length > 0) return prev; // ya hay algo
+        const futuros12 = buildProximosMeses(12);
+        const merged: MesSeleccionado[] = futuros12.map(f => ({ mes: f.mes, anio: f.anio, seleccionado: false }));
+        return merged;
+      });
+      setModoMultiplesMeses(prev => {
+        // solo enciende múltiples si de verdad no había pendientes
+        return true;
+      });
+    };
+    run();
+  }, [clienteId]);
+
 
   // Reacción a clienteId
   useEffect(() => {
@@ -546,9 +576,7 @@ export default function RegistrarPago() {
         });
       } else {
         const target = mesMasAntiguoPendiente;
-        const fallbackMes = new Date().getMonth() + 1;
-        const fallbackAnio = new Date().getFullYear();
-
+        const { mes: nextMes, anio: nextAnio } = getProximoMesYAno();
         const body = {
           cliente_id: clienteId,
           monto: Number(montoTotal),
@@ -556,8 +584,8 @@ export default function RegistrarPago() {
           metodo_id: metodoId,
           referencia: referencia || null,
           observacion: observacion || null,
-          mes_aplicado: target?.mes ?? fallbackMes,
-          anio_aplicado: target?.anio ?? fallbackAnio,
+          mes_aplicado: target?.mes ?? nextMes,
+          anio_aplicado: target?.anio ?? nextAnio,
         };
 
         const res = await fetch(`${apiHost}/api/pagos`, {
@@ -710,7 +738,7 @@ export default function RegistrarPago() {
                   {mesMasAntiguoPendiente ? (
                     <>Este pago se acreditará al <b>mes más antiguo pendiente</b>: {monthNames[mesMasAntiguoPendiente.mes - 1]} {mesMasAntiguoPendiente.anio}. <i>Si ese mes estuviera suspendido, se aplicará automáticamente al último mes pendiente no suspendido.</i></>
                   ) : (
-                    <>Este cliente no tiene meses pendientes hasta hoy. El pago se acreditará al <b>mes actual</b>. <i>Si el cliente tuviera estado Suspendido, se asignará automáticamente al último mes pendiente no suspendido.</i></>
+                    <>Este cliente está al día. El pago se acreditará al <b>próximo mes</b> ({monthNames[getProximoMesYAno().mes - 1]} {getProximoMesYAno().anio}).</>
                   )}
                 </div>
               )}
@@ -832,14 +860,14 @@ export default function RegistrarPago() {
                       <button
                         type="button"
                         onClick={() => {
-                          const futuros = buildFuturosRestoDelAnio();
-                          mergeMesesEnSeleccionados(futuros, false); // agrégalos sin seleccionar
+                          const futuros12 = buildProximosMeses(12);
+                          mergeMesesEnSeleccionados(futuros12, false);
                         }}
                         className="px-3 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
-                        title="Agrega los meses restantes del año actual"
                       >
                         Agregar pago de meses adelantados
                       </button>
+
                       <button
                         type="button"
                         onClick={() => toggleTodosMeses(true)}
