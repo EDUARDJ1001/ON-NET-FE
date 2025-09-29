@@ -18,6 +18,7 @@ interface Cliente {
   coordenadas: string;
   plan_id: number;
   dia_pago: number;
+  estado_id?: number;
   estados: Estado[];
   fecha_instalacion: string;
 }
@@ -265,6 +266,24 @@ const ClienteModal = ({
               />
             </div>
 
+            {/* estado cliente */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-slate-600 mb-1">Estado Cliente</label>
+              <select
+                name="estado_id"
+                value={form.estado_id ?? ""}
+                onChange={handleChange}
+                disabled={!editando}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100 cursor-not-allowed" : ""
+                  }`}
+              >
+                <option value="">Seleccionar estado</option>
+                <option value="1">Activo</option>
+                <option value="2">Inactivo</option>
+                <option value="3">Suspendido</option>
+              </select>
+            </div>
+
             {/* direccion (ocupa 2 columnas en md) */}
             <div className="flex flex-col md:col-span-2">
               <label className="text-xs font-medium text-slate-600 mb-1">Dirección</label>
@@ -347,7 +366,9 @@ const ClienteModal = ({
                           ? "text-green-600 font-semibold"
                           : e.estado === "Pagado Parcial"
                             ? "text-yellow-600 font-semibold"
-                            : "text-red-600 font-semibold"
+                            : e.estado === "Suspendido"
+                              ? "text-gray-800 font-semibold"
+                              : "text-red-600 font-semibold"
                       }
                     >
                       {e.estado}
