@@ -77,7 +77,6 @@ export default function SidebarAdmin({
             <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">Administración</p>
             <ul className="space-y-1">
               <Item href="/pages/admin/clientes" label="Gestión de Clientes de Internet" />
-              <Item href="/pages/admin/clientes/iptv" label="Gestión de Clientes de IPTV" />
               <Item href="/pages/admin/empleados" label="Gestión de Empleados" />
               <Item href="/pages/admin/planes" label="Planes de Internet" />
             </ul>
@@ -98,14 +97,13 @@ export default function SidebarAdmin({
 
           <hr className="border-orange-300/60" />
 
-          {/* <div className="space-y-2">
-            <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">Técnico</p>
-            <ul className="space-y-1">
-              <Item href="/pages/tecnico/tareas" label="Tareas Asignadas" exact />
-              <Item href="/pages/tecnico/instalacion" label="Registrar Instalación" exact />
-              <Item href="/pages/tecnico/reportar" label="Reportar Problemas" exact />
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">IPTV</p>
+            <ul className="space-y-1">              
+              <Item href="/pages/admin/iptv" label="Gestión de Clientes de IPTV" />
+              <Item href="/pages/admin/iptv/planestv" label="Planes de IPTV" />
             </ul>
-          </div> */}
+          </div>
         </div>
       </div>
     </aside>
