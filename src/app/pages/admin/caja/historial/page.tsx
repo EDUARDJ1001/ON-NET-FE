@@ -183,7 +183,19 @@ const VerPagos = () => {
   };
 
   const formatFecha = (fecha: string) => {
-    return new Date(fecha).toLocaleDateString("es-HN", {
+    // Si la fecha ya está en formato YYYY-MM-DD, usarla directamente
+    if (fecha.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = fecha.split('-');
+      return `${day}-${month}-${year}`;
+    }
+
+    // Para otros formatos, crear la fecha ajustando la zona horaria
+    const date = new Date(fecha);
+
+    // Ajustar para compensar la zona horaria
+    const adjustedDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+
+    return adjustedDate.toLocaleDateString("es-HN", {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
