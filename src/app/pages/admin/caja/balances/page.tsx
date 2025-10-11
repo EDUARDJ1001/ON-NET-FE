@@ -97,7 +97,7 @@ const BalanceMensual = () => {
                 const ini = range.start;
                 const fin = range.end;
                 const pagosFiltrados = data.filter((p) => {
-                    const fechaPago = new Date(p.fecha_pago);
+                    const fechaPago = parseDateLocal(p.fecha_pago);
                     return fechaPago >= ini && fechaPago <= fin;
                 });
                 setIngresos(pagosFiltrados);
@@ -231,17 +231,14 @@ const BalanceMensual = () => {
                                 ) : (
                                     ingresos
                                         .slice()
-                                        .sort((a, b) => new Date(a.fecha_pago).getTime() - new Date(b.fecha_pago).getTime())
+                                        .sort((a, b) => parseDateLocal(a.fecha_pago).getTime() - parseDateLocal(b.fecha_pago).getTime())
                                         .map((p) => (
                                             <tr key={p.id} className="hover:bg-slate-50">
                                                 <td className="px-4 py-3 text-sm">{p.id}</td>
                                                 <td className="px-4 py-3 text-sm">
                                                     {new Intl.DateTimeFormat("es-HN", {
-                                                        timeZone: TZ,
-                                                        year: "numeric",
-                                                        month: "2-digit",
-                                                        day: "2-digit",
-                                                    }).format(new Date(p.fecha_pago))}
+                                                        timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+                                                    }).format(parseDateLocal(p.fecha_pago))}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm font-semibold text-green-700">{formatMoney(Number(p.monto) || 0)}</td>
                                             </tr>
