@@ -32,7 +32,9 @@ interface Cliente {
   estado_id?: number;
   descripcion?: string;
   estados: EstadoMensual[];
+  fecha_instalacion?: string;
 }
+
 
 type PlanMap = Record<number, Plan>;
 
@@ -47,9 +49,36 @@ const mesLargo = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio"
 const cajaHref = (c: Cliente) => `/pages/admin/caja?clienteId=${encodeURIComponent(c.id)}`;
 
 /** Devuelve los meses (1-12) adeudados del año actual hasta el mes actual (inclusive) */
-const obtenerMesesAdeudados = (cliente: Cliente, anioActual: number, mesActual: number): number[] => {
+const obtenerMesesAdeudados = (
+  cliente: Cliente,
+  anioActual: number,
+  mesActual: number,
+  hoy: Date
+): number[] => {
+  // Determinar último mes contable del año actual
+  let ultimoMes = mesActual;
+
+  // Si aún no llegó el día de pago de este mes, no contar el mes actual
+  const diaCorte = Number.isFinite(cliente.dia_pago) ? cliente.dia_pago : 1;
+  const esMismoMes = (hoy.getMonth() + 1) === mesActual;
+  if (esMismoMes && hoy.getDate() < diaCorte) {
+    ultimoMes = mesActual - 1;
+  }
+
+  // Si hay fecha de instalación, no contar meses previos
+  let primerMes = 1;
+  if (cliente.fecha_instalacion) {
+    const fi = new Date(cliente.fecha_instalacion);
+    const anioInst = fi.getFullYear();
+    const mesInst = fi.getMonth() + 1;
+    if (anioInst > anioActual) return [];                 // instalado en año futuro -> nada
+    if (anioInst === anioActual) primerMes = Math.max(1, mesInst);
+  }
+
+  if (ultimoMes < primerMes) return [];
+
   const meses: number[] = [];
-  for (let m = 1; m <= mesActual; m++) {
+  for (let m = primerMes; m <= ultimoMes; m++) {
     const estado = cliente.estados?.find(e => e.mes === m && e.anio === anioActual)?.estado;
     if (estado !== "Pagado") {
       // cuenta "Pendiente", "Pagado Parcial" o "Sin estado"
@@ -125,7 +154,7 @@ const Pendientes = () => {
       // Filtrar pendientes por meses adeudados > 0
       const pendientes = clientesConEstados.filter(c => {
         const planPrecio = c.plan?.precio_mensual ?? mapaPlanes[c.plan_id]?.precio_mensual ?? 0;
-        const mesesAdeudados = obtenerMesesAdeudados(c, anioActual, mesActual);
+        const mesesAdeudados = obtenerMesesAdeudados(c, anioActual, mesActual, hoy); // <-- pasa 'hoy'
         return planPrecio > 0 && mesesAdeudados.length > 0;
       });
 
@@ -297,7 +326,7 @@ const Pendientes = () => {
                     ?? planes[cliente.plan_id]?.precio_mensual
                     ?? 0;
 
-                  const mesesAdeudados = obtenerMesesAdeudados(cliente, anioActual, mesActual);
+                  const mesesAdeudados = obtenerMesesAdeudados(cliente, anioActual, mesActual, hoy);
                   const montoAdeudado = planPrecio * mesesAdeudados.length;
 
                   return (
@@ -318,10 +347,10 @@ const Pendientes = () => {
                         {/* Estado servicio */}
                         <span
                           className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${cliente.descripcion === "Activo" || cliente.estado_id === 1
-                              ? "bg-green-100 text-green-700"
-                              : cliente.descripcion === "Suspendido" || cliente.estado_id === 3
-                                ? "bg-yellow-100 text-yellow-700"
-                                : "bg-red-100 text-red-700"
+                            ? "bg-green-100 text-green-700"
+                            : cliente.descripcion === "Suspendido" || cliente.estado_id === 3
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-red-100 text-red-700"
                             }`}
                           title="Estado del servicio"
                         >
@@ -343,8 +372,8 @@ const Pendientes = () => {
                           <p className="text-xs text-slate-500">Día de pago</p>
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${cliente.dia_pago === 15
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-green-100 text-green-700"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-green-100 text-green-700"
                               }`}
                           >
                             {cliente.dia_pago}
@@ -431,7 +460,7 @@ const Pendientes = () => {
                         ?? planes[cliente.plan_id]?.precio_mensual
                         ?? 0;
 
-                      const mesesAdeudados = obtenerMesesAdeudados(cliente, anioActual, mesActual);
+                      const mesesAdeudados = obtenerMesesAdeudados(cliente, anioActual, mesActual, hoy);
                       const montoAdeudado = planPrecio * mesesAdeudados.length;
 
                       return (
@@ -484,8 +513,8 @@ const Pendientes = () => {
                           <td className="px-4 py-3 font-medium text-center">
                             <span
                               className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cliente.dia_pago === 15
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-green-100 text-green-700"
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-green-100 text-green-700"
                                 }`}
                             >
                               {cliente.dia_pago}
@@ -496,10 +525,10 @@ const Pendientes = () => {
                           <td className="px-4 py-3">
                             <span
                               className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${cliente.descripcion === "Activo" || cliente.estado_id === 1
-                                  ? "bg-green-100 text-green-700"
-                                  : cliente.descripcion === "Suspendido" || cliente.estado_id === 3
-                                    ? "bg-yellow-100 text-yellow-700"
-                                    : "bg-red-100 text-red-700"
+                                ? "bg-green-100 text-green-700"
+                                : cliente.descripcion === "Suspendido" || cliente.estado_id === 3
+                                  ? "bg-yellow-100 text-yellow-700"
+                                  : "bg-red-100 text-red-700"
                                 }`}
                             >
                               {cliente.descripcion ||
