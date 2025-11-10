@@ -70,10 +70,10 @@ const badgeEstado = (nombreEstado?: EstadoNombre, estado_id?: number) => {
     (estado_id === 1
       ? "Activo"
       : estado_id === 2
-      ? "Inactivo"
-      : estado_id === 3
-      ? "Suspendido"
-      : "Desconocido");
+        ? "Inactivo"
+        : estado_id === 3
+          ? "Suspendido"
+          : "Desconocido");
 
   let cls =
     "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border";
@@ -109,10 +109,10 @@ const buildMapLinks = (coordenadas?: string, direccion?: string) => {
   const q = encodeURIComponent(direccion || "");
   return q
     ? {
-        gmaps: `https://www.google.com/maps?q=${q}`,
-        waze: `https://waze.com/ul?q=${q}&navigate=yes`,
-        label: direccion,
-      }
+      gmaps: `https://www.google.com/maps?q=${q}`,
+      waze: `https://waze.com/ul?q=${q}&navigate=yes`,
+      label: direccion,
+    }
     : null;
 };
 
@@ -425,6 +425,12 @@ const GestionClientes = () => {
               Consulta el estado de los clientes y gestiona sus pagos
             </p>
           </div>
+          <Link
+            href="/pages/admin/planes"
+            className="inline-flex items-center justify-center px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm font-medium"
+          >
+            Planes de Internet
+          </Link>
           <Link
             href="/pages/admin/clientes/registrar"
             className="inline-flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
@@ -896,8 +902,7 @@ const GestionClientes = () => {
                                       <div
                                         key={index}
                                         className={`p-1 rounded text-center text-xs ${color}`}
-                                        title={`${
-                                          [
+                                        title={`${[
                                             "Ene",
                                             "Feb",
                                             "Mar",
@@ -911,7 +916,7 @@ const GestionClientes = () => {
                                             "Nov",
                                             "Dic",
                                           ][index]
-                                        }: ${estado?.estado || "Sin estado"}`}
+                                          }: ${estado?.estado || "Sin estado"}`}
                                       >
                                         {mes}
                                       </div>

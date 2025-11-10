@@ -76,9 +76,9 @@ export default function SidebarAdmin({
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">Administración</p>
             <ul className="space-y-1">
-              <Item href="/pages/admin/clientes" label="Gestión de Clientes de Internet" />
+              <Item href="/pages/admin/clientes" label="Gestión de Clientes de Internet" />              
+              {/* <Item href="/pages/admin/iptv/clientes" label="Gestión de Clientes de IPTV" /> */}
               <Item href="/pages/admin/empleados" label="Gestión de Empleados" />
-              <Item href="/pages/admin/planes" label="Planes de Internet" />
             </ul>
           </div>
 
@@ -87,21 +87,11 @@ export default function SidebarAdmin({
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">Caja</p>
             <ul className="space-y-1">
-              <Item href="/pages/admin/caja" label="Registrar Pago" exact />
+              <Item href="/pages/admin/caja/historial" label="Pagos Internet" />              
+              {/* <Item href="/pages/admin/iptv/historialtv" label="Pagos IPTV" /> */}
               <Item href="/pages/admin/caja/gastos" label="Registrar Gastos" />
               <Item href="/pages/admin/caja/balances" label="Balances" />
-              <Item href="/pages/admin/caja/historial" label="Historial de Pagos" />
               <Item href="/pages/admin/caja/pendientes" label="Clientes Pendientes" />
-            </ul>
-          </div>
-
-          <hr className="border-orange-300/60" />
-
-          <div className="space-y-2">
-            <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">IPTV</p>
-            <ul className="space-y-1">              
-              <Item href="/pages/admin/iptv" label="Gestión de Clientes de IPTV" />
-              <Item href="/pages/admin/iptv/planestv" label="Planes de IPTV" />
             </ul>
           </div>
         </div>

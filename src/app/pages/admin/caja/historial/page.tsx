@@ -274,7 +274,7 @@ const VerPagos = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
-              href="/pages/admin/registrar-pago"
+              href="/pages/admin/caja"
               className="inline-flex items-center px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700 text-sm"
             >
               + Nuevo Pago
