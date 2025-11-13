@@ -87,6 +87,7 @@ export default function SidebarAdmin({
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">Caja</p>
             <ul className="space-y-1">
+              <Item href="/pages/admin/caja" label="Registrar Pago" /> 
               <Item href="/pages/admin/caja/historial" label="Pagos Internet" />              
               {/* <Item href="/pages/admin/iptv/historialtv" label="Pagos IPTV" /> */}
               <Item href="/pages/admin/caja/gastos" label="Registrar Gastos" />
