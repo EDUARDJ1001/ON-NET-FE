@@ -18,7 +18,7 @@ export default function SidebarAdmin({
   const Item = ({ href, label, exact = false }: { href: string; label: string; exact?: boolean }) => {
     // Comparación exacta o por startsWith según sea necesario
     let active = false;
-    
+
     if (exact) {
       active = pathname === href;
     } else {
@@ -29,14 +29,14 @@ export default function SidebarAdmin({
         '/pages/tecnico/instalacion',
         '/pages/tecnico/reportar'
       ];
-      
+
       if (routesWithoutSubpaths.includes(href)) {
         active = pathname === href;
       } else {
         active = pathname?.startsWith(href) || false;
       }
     }
-    
+
     return (
       <li>
         <Link
@@ -76,8 +76,8 @@ export default function SidebarAdmin({
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">Administración</p>
             <ul className="space-y-1">
-              <Item href="/pages/admin/clientes" label="Gestión de Clientes de Internet" />              
-              {/* <Item href="/pages/admin/iptv/clientes" label="Gestión de Clientes de IPTV" /> */}
+              <Item href="/pages/admin/clientes" label="Gestión de Clientes de Internet" />
+              <Item href="/pages/admin/iptv/clientes" label="Gestión de Clientes de IPTV" />
               <Item href="/pages/admin/empleados" label="Gestión de Empleados" />
             </ul>
           </div>
@@ -85,14 +85,22 @@ export default function SidebarAdmin({
           <hr className="border-orange-300/60" />
 
           <div className="space-y-2">
-            <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">Caja</p>
+            <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">Gestion Internet</p>
             <ul className="space-y-1">
-              <Item href="/pages/admin/caja" label="Registrar Pago" /> 
-              <Item href="/pages/admin/caja/historial" label="Pagos Internet" />              
-              {/* <Item href="/pages/admin/iptv/historialtv" label="Pagos IPTV" /> */}
+              <Item href="/pages/admin/caja" label="Registrar Pago" />
+              <Item href="/pages/admin/caja/historial" label="Pagos Internet" />
               <Item href="/pages/admin/caja/gastos" label="Registrar Gastos" />
               <Item href="/pages/admin/caja/balances" label="Balances" />
               <Item href="/pages/admin/caja/pendientes" label="Clientes Pendientes" />
+            </ul>
+          </div>
+
+          <div>
+            <p className="text-xs uppercase tracking-wide text-orange-500/80 font-medium">Gestion TV</p>
+            <ul className="space-y-1">
+              <Item href="/pages/admin/iptv/historialtv" label="Pagos IPTV" />
+              <Item href="/pages/admin/iptv/gastostv" label="Gastos IPTV" />
+              <Item href="/pages/admin/iptv/balancestv" label="Balances IPTV" />
             </ul>
           </div>
         </div>

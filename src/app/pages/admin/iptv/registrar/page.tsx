@@ -45,21 +45,17 @@ const RegistrarClienteTV = () => {
   // Función para obtener la fecha local sin problemas de zona horaria
   const getFechaLocal = (): string => {
     const now = new Date();
-    // Ajustar a la zona horaria local
-    const offset = now.getTimezoneOffset();
-    const localDate = new Date(now.getTime() - (offset * 60 * 1000));
-    return localDate.toISOString().split('T')[0];
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   // Función para formatear fechas al formato YYYY-MM-DD sin problemas de zona horaria
   const formatFechaParaBackend = (fecha: string): string => {
     if (!fecha) return fecha;
-    
-    const date = new Date(fecha);
-    // Ajustar para evitar el desplazamiento de zona horaria
-    const offset = date.getTimezoneOffset();
-    const localDate = new Date(date.getTime() - (offset * 60 * 1000));
-    return localDate.toISOString().split('T')[0];
+    // El input type="date" ya devuelve YYYY-MM-DD, usarlo directamente
+    return fecha;
   };
 
   useEffect(() => {
@@ -97,8 +93,8 @@ const RegistrarClienteTV = () => {
         console.error(e);
         // fallback: estado 1 (Activo) sin catálogos
         const hoy = getFechaLocal();
-        setForm((prev) => ({ 
-          ...prev, 
+        setForm((prev) => ({
+          ...prev,
           estado_id: prev.estado_id || "1",
           fecha_inicio: hoy,
           fecha_expiracion: hoy
@@ -183,11 +179,11 @@ const RegistrarClienteTV = () => {
       }
 
       setMensaje("✅ Cliente TV registrado con éxito.");
-      
+
       // Reset form con valores por defecto
       const hoy = getFechaLocal();
       const defPlan = planes[0]?.id ? String(planes[0].id) : "";
-      
+
       setForm({
         nombre: "",
         usuario: "",
@@ -196,8 +192,8 @@ const RegistrarClienteTV = () => {
         plantv_id: defPlan,
         estado_id: String(
           estados.find((e) => e.nombre?.toLowerCase() === "activo")?.id ??
-            estados[0]?.id ??
-            1
+          estados[0]?.id ??
+          1
         ),
         fecha_inicio: hoy,
         fecha_expiracion: hoy,
@@ -466,11 +462,10 @@ const RegistrarClienteTV = () => {
 
           {mensaje && (
             <div
-              className={`mt-4 p-3 rounded-md text-center ${
-                mensaje.startsWith("✅")
+              className={`mt-4 p-3 rounded-md text-center ${mensaje.startsWith("✅")
                   ? "bg-green-100 text-green-700 border border-green-200"
                   : "bg-red-100 text-red-700 border border-red-200"
-              }`}
+                }`}
             >
               <p className="font-medium">{mensaje}</p>
               {mensaje.startsWith("✅") && (

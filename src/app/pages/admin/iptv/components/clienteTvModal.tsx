@@ -218,6 +218,7 @@ const ClienteTvModal = ({
     if (e === "pagado") return "text-green-600 font-semibold";
     if (e === "pagado parcial") return "text-yellow-600 font-semibold";
     if (e === "suspendido") return "text-gray-800 font-semibold";
+    if (e === "sin dato") return "text-gray-800 font-semibold";
     return "text-red-600 font-semibold"; // pendiente u otro
     // Ajusta si tienes más estados
   };
