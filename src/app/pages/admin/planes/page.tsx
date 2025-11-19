@@ -152,7 +152,7 @@ const Planes = () => {
         {/* Header con título y botón */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-orange-600">Gestión de Planes de IPTV</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-orange-600">Gestión de Planes de Internet</h1>
             <p className="text-sm text-slate-600 mt-2">
               Gestiona los planes disponibles en el sistema
             </p>
