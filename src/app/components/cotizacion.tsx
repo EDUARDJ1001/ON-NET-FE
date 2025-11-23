@@ -8,7 +8,7 @@ interface ClienteData {
     nombre: string;
     direccion: string;
     telefono: string;
-    rtn: string;
+    rtn: string; // opcional en comportamiento (si vacío no se muestra)
 }
 
 interface CotizacionItem {
@@ -16,13 +16,14 @@ interface CotizacionItem {
     concepto: string;
     descripcion: string;
     cantidad: number;
-    precioUnitario: number;
+    precioUnitario: number;  // precio final con ISV
+    precioSinISV: number;    // calculado automáticamente
 }
 
 interface CotizacionData {
     cliente: ClienteData;
     items: CotizacionItem[];
-    total: number;
+    total: number; // total con ISV
     fecha: string;
 }
 
@@ -53,10 +54,13 @@ const Cotizacion = () => {
             maximumFractionDigits: 2,
         });
 
+    // Total general (precio con ISV)
     const total = items.reduce(
         (acc, item) => acc + item.cantidad * item.precioUnitario,
         0
     );
+    const isv = total * 0.15;
+    const subtotal = total - isv;
 
     /* ====== Handlers ====== */
 
@@ -99,12 +103,16 @@ const Cotizacion = () => {
             return;
         }
 
+        // El precio que ingresa el usuario YA incluye ISV
+        const precioSinISV = precioNum / 1.15;
+
         const nuevoItem: CotizacionItem = {
             id: Date.now(),
             concepto,
             descripcion,
             cantidad: cantidadNum,
-            precioUnitario: precioNum,
+            precioUnitario: precioNum, // con ISV
+            precioSinISV,              // sin ISV (calculado)
         };
 
         setItems((prev) => [...prev, nuevoItem]);
@@ -190,6 +198,9 @@ const Cotizacion = () => {
               ${item.cantidad}
             </td>
             <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: right;">
+              L. ${formatCurrency(item.precioSinISV)}
+            </td>
+            <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: right;">
               L. ${formatCurrency(item.precioUnitario)}
             </td>
             <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: right;">
@@ -199,6 +210,10 @@ const Cotizacion = () => {
         `;
                 })
                 .join("");
+
+            const totalPDF = cotizacionData.total;
+            const isvPDF = totalPDF * 0.15;
+            const subtotalPDF = totalPDF - isvPDF;
 
             const htmlContent = `
         <!DOCTYPE html>
@@ -291,7 +306,12 @@ const Cotizacion = () => {
             <div class="section-title">Datos del Cliente</div>
             <div class="client-data">
               <div><strong>Nombre:</strong> ${cotizacionData.cliente.nombre}</div>
-              <div><strong>RTN:</strong> ${cotizacionData.cliente.rtn || "N/A"}</div>
+              ${
+                  cotizacionData.cliente.rtn &&
+                  cotizacionData.cliente.rtn.trim() !== ""
+                      ? `<div><strong>RTN:</strong> ${cotizacionData.cliente.rtn}</div>`
+                      : ""
+              }
               <div><strong>Teléfono:</strong> ${cotizacionData.cliente.telefono}</div>
               <div style="grid-column: 1 / -1;">
                 <strong>Dirección:</strong> ${cotizacionData.cliente.direccion}
@@ -308,6 +328,7 @@ const Cotizacion = () => {
                   <th style="padding: 6px 8px; border: 1px solid #ccc;">Concepto</th>
                   <th style="padding: 6px 8px; border: 1px solid #ccc;">Descripción</th>
                   <th style="padding: 6px 8px; border: 1px solid #ccc; width: 70px;">Cant.</th>
+                  <th style="padding: 6px 8px; border: 1px solid #ccc; width: 120px;">Precio sin ISV (L.)</th>
                   <th style="padding: 6px 8px; border: 1px solid #ccc; width: 120px;">Precio unitario (L.)</th>
                   <th style="padding: 6px 8px; border: 1px solid #ccc; width: 120px;">Total (L.)</th>
                 </tr>
@@ -315,11 +336,27 @@ const Cotizacion = () => {
               <tbody>
                 ${filasItems}
                 <tr>
-                  <td colspan="5" style="padding: 6px 8px; border: 1px solid #ccc; text-align: right; font-weight: bold;">
+                  <td colspan="6" style="padding: 6px 8px; border: 1px solid #ccc; text-align: right;">
+                    Subtotal
+                  </td>
+                  <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: right;">
+                    L. ${formatCurrency(subtotalPDF)}
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="6" style="padding: 6px 8px; border: 1px solid #ccc; text-align: right;">
+                    ISV (15%)
+                  </td>
+                  <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: right;">
+                    L. ${formatCurrency(isvPDF)}
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="6" style="padding: 6px 8px; border: 1px solid #ccc; text-align: right; font-weight: bold;">
                     TOTAL
                   </td>
                   <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: right; font-weight: bold;">
-                    L. ${formatCurrency(cotizacionData.total)}
+                    L. ${formatCurrency(totalPDF)}
                   </td>
                 </tr>
               </tbody>
@@ -327,13 +364,20 @@ const Cotizacion = () => {
           </div>
 
           <div class="footer">
-            <img src="${window.location.origin}/img/ON-NET-BANNER.png"
-              alt="ON-NET Banner"
-              class="logo"
-              style="display: block; margin: 0 auto 10px; width: 200px;">
-            <div>Gracias por considerar nuestros servicios. Esta cotización es válida por 15 días.</div>
-          </div>
-        </body>
+                <img 
+                src="${window.location.origin}/img/ON-NET-BANNER.png"
+                alt="ON-NET Banner"
+                class="logo"
+                style="
+                    display: block;
+                    margin: 0 auto 25px;
+                    width: 40%;
+                    max-width: 900px;
+                    padding: 0 20px;
+                "
+                >
+                <div>Gracias por considerar nuestros servicios. Esta cotización es válida por 15 días.</div>
+            </div>
         </html>
       `;
 
@@ -451,7 +495,7 @@ const Cotizacion = () => {
                                         value={clienteData.rtn}
                                         onChange={handleClienteChange}
                                         className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                        placeholder="RTN del cliente"
+                                        placeholder="RTN del cliente (opcional)"
                                     />
                                 </div>
                             </div>
@@ -554,6 +598,9 @@ const Cotizacion = () => {
                                             <th className="px-3 py-2 text-left">Descripción</th>
                                             <th className="px-3 py-2 text-center w-20">Cant.</th>
                                             <th className="px-3 py-2 text-right w-32">
+                                                Precio sin ISV (L.)
+                                            </th>
+                                            <th className="px-3 py-2 text-right w-32">
                                                 Precio unitario (L.)
                                             </th>
                                             <th className="px-3 py-2 text-right w-32">Total (L.)</th>
@@ -581,6 +628,9 @@ const Cotizacion = () => {
                                                         {item.cantidad}
                                                     </td>
                                                     <td className="px-3 py-2 align-top text-right">
+                                                        L. {formatCurrency(item.precioSinISV)}
+                                                    </td>
+                                                    <td className="px-3 py-2 align-top text-right">
                                                         L. {formatCurrency(item.precioUnitario)}
                                                     </td>
                                                     <td className="px-3 py-2 align-top text-right">
@@ -600,9 +650,31 @@ const Cotizacion = () => {
                                         })}
                                     </tbody>
                                     <tfoot>
+                                        <tr>
+                                            <td
+                                                colSpan={7}
+                                                className="px-3 py-2 text-right font-semibold text-gray-800"
+                                            >
+                                                Subtotal
+                                            </td>
+                                            <td className="px-3 py-2 text-right text-gray-800">
+                                                L. {formatCurrency(subtotal)}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td
+                                                colSpan={7}
+                                                className="px-3 py-2 text-right font-semibold text-gray-800"
+                                            >
+                                                ISV (15%)
+                                            </td>
+                                            <td className="px-3 py-2 text-right text-gray-800">
+                                                L. {formatCurrency(isv)}
+                                            </td>
+                                        </tr>
                                         <tr className="border-t">
                                             <td
-                                                colSpan={5}
+                                                colSpan={7}
                                                 className="px-3 py-3 text-right font-bold text-gray-800"
                                             >
                                                 TOTAL
@@ -610,7 +682,6 @@ const Cotizacion = () => {
                                             <td className="px-3 py-3 text-right font-bold text-orange-600">
                                                 L. {formatCurrency(total)}
                                             </td>
-                                            <td />
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -638,146 +709,197 @@ const Cotizacion = () => {
                     </div>
 
                     {/* Vista previa y descarga PDF */}
-                    {cotizacionData && (
-                        <div className="bg-white rounded-2xl shadow-2xl p-8 mb-8 border border-orange-200">
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                                <div>
-                                    <h2 className="text-2xl font-bold text-gray-800 mb-1">
-                                        Vista previa de cotización
-                                    </h2>
-                                    <p className="text-gray-600">
-                                        Revise los datos antes de descargar el PDF.
-                                    </p>
-                                </div>
-                                <div className="flex gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => setCotizacionData(null)}
-                                        className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg transition"
-                                    >
-                                        Seguir editando
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={descargarPDF}
-                                        disabled={generandoPdf}
-                                        className="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {generandoPdf ? "Generando PDF..." : "Descargar PDF"}
-                                    </button>
-                                </div>
-                            </div>
+                    {cotizacionData &&
+                        (() => {
+                            const totalPrev = cotizacionData.total;
+                            const isvPrev = totalPrev * 0.15;
+                            const subtotalPrev = totalPrev - isvPrev;
 
-                            <div className="bg-white p-6 border-2 border-gray-300 rounded-lg">
-                                <div className="border-b-2 border-gray-300 pb-4 mb-4">
-                                    <div className="text-center">
-                                        <h1 className="text-2xl font-bold text-gray-800 mb-1">
-                                            ON NET WIRELESS Y SERVICIOS
-                                        </h1>
-                                        <h2 className="text-lg text-gray-600 mb-1">
-                                            Cotización de servicios
-                                        </h2>
-                                        <div className="text-md text-gray-700 font-semibold mt-1">
-                                            Fecha: {cotizacionData.fecha}
+                            return (
+                                <div className="bg-white rounded-2xl shadow-2xl p-8 mb-8 border border-orange-200">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                                        <div>
+                                            <h2 className="text-2xl font-bold text-gray-800 mb-1">
+                                                Vista previa de cotización
+                                            </h2>
+                                            <p className="text-gray-600">
+                                                Revise los datos antes de descargar el PDF.
+                                            </p>
+                                        </div>
+                                        <div className="flex gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => setCotizacionData(null)}
+                                                className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg transition"
+                                            >
+                                                Seguir editando
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={descargarPDF}
+                                                disabled={generandoPdf}
+                                                className="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {generandoPdf ? "Generando PDF..." : "Descargar PDF"}
+                                            </button>
                                         </div>
                                     </div>
-                                </div>
 
-                                <div className="mb-6">
-                                    <h3 className="text-lg font-bold text-gray-800 mb-3 pb-1 border-b border-gray-200">
-                                        Datos del Cliente
-                                    </h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-md">
-                                        <div>
-                                            <strong>Nombre:</strong> {cotizacionData.cliente.nombre}
+                                    <div className="bg-white p-6 border-2 border-gray-300 rounded-lg">
+                                        <div className="border-b-2 border-gray-300 pb-4 mb-4">
+                                            <div className="text-center">
+                                                <h1 className="text-2xl font-bold text-gray-800 mb-1">
+                                                    ON NET WIRELESS Y SERVICIOS
+                                                </h1>
+                                                <h2 className="text-lg text-gray-600 mb-1">
+                                                    Cotización de servicios
+                                                </h2>
+                                                <div className="text-md text-gray-700 font-semibold mt-1">
+                                                    Fecha: {cotizacionData.fecha}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <strong>RTN:</strong>{" "}
-                                            {cotizacionData.cliente.rtn || "N/A"}
-                                        </div>
-                                        <div>
-                                            <strong>Teléfono:</strong>{" "}
-                                            {cotizacionData.cliente.telefono}
-                                        </div>
-                                        <div className="md:col-span-2">
-                                            <strong>Dirección:</strong>{" "}
-                                            {cotizacionData.cliente.direccion}
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-800 mb-3 pb-1 border-b border-gray-200">
-                                        Detalle de la cotización
-                                    </h3>
-                                    <div className="overflow-x-auto">
-                                        <table className="min-w-full text-sm">
-                                            <thead>
-                                                <tr className="bg-gray-100 text-gray-700">
-                                                    <th className="px-3 py-2 text-left w-10">#</th>
-                                                    <th className="px-3 py-2 text-left">Concepto</th>
-                                                    <th className="px-3 py-2 text-left">Descripción</th>
-                                                    <th className="px-3 py-2 text-center w-20">Cant.</th>
-                                                    <th className="px-3 py-2 text-right w-32">
-                                                        Precio unitario (L.)
-                                                    </th>
-                                                    <th className="px-3 py-2 text-right w-32">
-                                                        Total (L.)
-                                                    </th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {cotizacionData.items.map((item, index) => {
-                                                    const totalLinea =
-                                                        item.cantidad * item.precioUnitario;
-                                                    return (
-                                                        <tr
-                                                            key={item.id}
-                                                            className={
-                                                                index % 2 === 0 ? "bg-white" : "bg-gray-50"
-                                                            }
-                                                        >
-                                                            <td className="px-3 py-2 align-top">
-                                                                {index + 1}
+                                        <div className="mb-6">
+                                            <h3 className="text-lg font-bold text-gray-800 mb-3 pb-1 border-b border-gray-200">
+                                                Datos del Cliente
+                                            </h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-md">
+                                                <div>
+                                                    <strong>Nombre:</strong>{" "}
+                                                    {cotizacionData.cliente.nombre}
+                                                </div>
+                                                {cotizacionData.cliente.rtn &&
+                                                    cotizacionData.cliente.rtn.trim() !== "" && (
+                                                        <div>
+                                                            <strong>RTN:</strong>{" "}
+                                                            {cotizacionData.cliente.rtn}
+                                                        </div>
+                                                    )}
+                                                <div>
+                                                    <strong>Teléfono:</strong>{" "}
+                                                    {cotizacionData.cliente.telefono}
+                                                </div>
+                                                <div className="md:col-span-2">
+                                                    <strong>Dirección:</strong>{" "}
+                                                    {cotizacionData.cliente.direccion}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-bold text-gray-800 mb-3 pb-1 border-b border-gray-200">
+                                                Detalle de la cotización
+                                            </h3>
+                                            <div className="overflow-x-auto">
+                                                <table className="min-w-full text-sm">
+                                                    <thead>
+                                                        <tr className="bg-gray-100 text-gray-700">
+                                                            <th className="px-3 py-2 text-left w-10">#</th>
+                                                            <th className="px-3 py-2 text-left">Concepto</th>
+                                                            <th className="px-3 py-2 text-left">
+                                                                Descripción
+                                                            </th>
+                                                            <th className="px-3 py-2 text-center w-20">
+                                                                Cant.
+                                                            </th>
+                                                            <th className="px-3 py-2 text-right w-32">
+                                                                Precio sin ISV (L.)
+                                                            </th>
+                                                            <th className="px-3 py-2 text-right w-32">
+                                                                Precio unitario (L.)
+                                                            </th>
+                                                            <th className="px-3 py-2 text-right w-32">
+                                                                Total (L.)
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {cotizacionData.items.map((item, index) => {
+                                                            const totalLinea =
+                                                                item.cantidad * item.precioUnitario;
+                                                            return (
+                                                                <tr
+                                                                    key={item.id}
+                                                                    className={
+                                                                        index % 2 === 0
+                                                                            ? "bg-white"
+                                                                            : "bg-gray-50"
+                                                                    }
+                                                                >
+                                                                    <td className="px-3 py-2 align-top">
+                                                                        {index + 1}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 align-top font-medium">
+                                                                        {item.concepto}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 align-top text-gray-700">
+                                                                        {item.descripcion}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 align-top text-center">
+                                                                        {item.cantidad}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 align-top text-right">
+                                                                        L.{" "}
+                                                                        {formatCurrency(
+                                                                            item.precioSinISV
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 align-top text-right">
+                                                                        L.{" "}
+                                                                        {formatCurrency(
+                                                                            item.precioUnitario
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 align-top text-right">
+                                                                        L. {formatCurrency(totalLinea)}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                    <tfoot>
+                                                        <tr>
+                                                            <td
+                                                                colSpan={6}
+                                                                className="px-3 py-2 text-right font-semibold text-gray-800"
+                                                            >
+                                                                Subtotal
                                                             </td>
-                                                            <td className="px-3 py-2 align-top font-medium">
-                                                                {item.concepto}
-                                                            </td>
-                                                            <td className="px-3 py-2 align-top text-gray-700">
-                                                                {item.descripcion}
-                                                            </td>
-                                                            <td className="px-3 py-2 align-top text-center">
-                                                                {item.cantidad}
-                                                            </td>
-                                                            <td className="px-3 py-2 align-top text-right">
-                                                                L. {formatCurrency(item.precioUnitario)}
-                                                            </td>
-                                                            <td className="px-3 py-2 align-top text-right">
-                                                                L. {formatCurrency(totalLinea)}
+                                                            <td className="px-3 py-2 text-right text-gray-800">
+                                                                L. {formatCurrency(subtotalPrev)}
                                                             </td>
                                                         </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                            <tfoot>
-                                                <tr className="border-t">
-                                                    <td
-                                                        colSpan={5}
-                                                        className="px-3 py-3 text-right font-bold text-gray-800"
-                                                    >
-                                                        TOTAL
-                                                    </td>
-                                                    <td className="px-3 py-3 text-right font-bold text-orange-600">
-                                                        L. {formatCurrency(cotizacionData.total)}
-                                                    </td>
-                                                </tr>
-                                            </tfoot>
-                                        </table>
+                                                        <tr>
+                                                            <td
+                                                                colSpan={6}
+                                                                className="px-3 py-2 text-right font-semibold text-gray-800"
+                                                            >
+                                                                ISV (15%)
+                                                            </td>
+                                                            <td className="px-3 py-2 text-right text-gray-800">
+                                                                L. {formatCurrency(isvPrev)}
+                                                            </td>
+                                                        </tr>
+                                                        <tr className="border-t">
+                                                            <td
+                                                                colSpan={6}
+                                                                className="px-3 py-3 text-right font-bold text-gray-800"
+                                                            >
+                                                                TOTAL
+                                                            </td>
+                                                            <td className="px-3 py-3 text-right font-bold text-orange-600">
+                                                                L. {formatCurrency(totalPrev)}
+                                                            </td>
+                                                        </tr>
+                                                    </tfoot>
+                                                </table>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-                    )}
+                            );
+                        })()}
                 </div>
             </div>
         </AdminLayout>
