@@ -59,7 +59,7 @@ const GestionEmpleados = () => {
     if (!confirm.isConfirmed) return;
 
     try {
-      const res = await fetch(`${apiHost}/api/empleados/${id}`, {
+      const res = await fetch(`${apiHost}/api/users/${id}`, {
         method: "DELETE"
       });
       if (!res.ok) throw new Error("Error al eliminar");
