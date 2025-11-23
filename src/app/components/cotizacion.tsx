@@ -54,13 +54,17 @@ const Cotizacion = () => {
             maximumFractionDigits: 2,
         });
 
-    // Total general (precio con ISV)
-    const total = items.reduce(
-        (acc, item) => acc + item.cantidad * item.precioUnitario,
+    // ===== CÁLCULOS CORRECTOS Y CONSISTENTES =====
+    // Se basan SIEMPRE en precioSinISV para evitar discrepancias.
+
+    const subtotal = items.reduce(
+        (acc, item) => acc + item.cantidad * item.precioSinISV,
         0
     );
-    const isv = total * 0.15;
-    const subtotal = total - isv;
+
+    const isv = subtotal * 0.15;
+
+    const total = subtotal + isv;
 
     /* ====== Handlers ====== */
 
@@ -146,7 +150,7 @@ const Cotizacion = () => {
         const data: CotizacionData = {
             cliente: { ...clienteData },
             items: [...items],
-            total,
+            total, // total calculado a partir de subtotal + ISV
             fecha: new Date().toLocaleDateString("es-HN", {
                 year: "numeric",
                 month: "long",
@@ -211,9 +215,13 @@ const Cotizacion = () => {
                 })
                 .join("");
 
-            const totalPDF = cotizacionData.total;
-            const isvPDF = totalPDF * 0.15;
-            const subtotalPDF = totalPDF - isvPDF;
+            // Recalcular subtotal, ISV y total para el PDF con la misma lógica
+            const subtotalPDF = cotizacionData.items.reduce(
+                (acc, item) => acc + item.cantidad * item.precioSinISV,
+                0
+            );
+            const isvPDF = subtotalPDF * 0.15;
+            const totalPDF = subtotalPDF + isvPDF;
 
             const htmlContent = `
         <!DOCTYPE html>
@@ -363,20 +371,24 @@ const Cotizacion = () => {
             </table>
           </div>
 
-          <div class="footer">
+          <div class="footer" style="padding-bottom: 20px;">
                 <img 
-                src="${window.location.origin}/img/ON-NET-BANNER.png"
-                alt="ON-NET Banner"
-                class="logo"
-                style="
+                    src="${window.location.origin}/img/ON-NET-BANNER.png"
+                    alt="ON-NET Banner"
+                    class="logo"
+                    style="
                     display: block;
-                    margin: 0 auto 25px;
+                    margin: 0 auto 15px;
                     width: 40%;
                     max-width: 900px;
+                    max-height: 85px;
+                    object-fit: contain;
                     padding: 0 20px;
-                "
+                    "
                 >
-                <div>Gracias por considerar nuestros servicios. Esta cotización es válida por 15 días.</div>
+                <div style="font-size: 14px; font-weight: bold; margin-top: 10px;">
+                    Gracias por considerar nuestros servicios. Esta cotización es válida por 15 días.
+                </div>
             </div>
         </html>
       `;
@@ -711,9 +723,13 @@ const Cotizacion = () => {
                     {/* Vista previa y descarga PDF */}
                     {cotizacionData &&
                         (() => {
-                            const totalPrev = cotizacionData.total;
-                            const isvPrev = totalPrev * 0.15;
-                            const subtotalPrev = totalPrev - isvPrev;
+                            // Recalcular aquí también con la misma lógica
+                            const subtotalPrev = cotizacionData.items.reduce(
+                                (acc, item) => acc + item.cantidad * item.precioSinISV,
+                                0
+                            );
+                            const isvPrev = subtotalPrev * 0.15;
+                            const totalPrev = subtotalPrev + isvPrev;
 
                             return (
                                 <div className="bg-white rounded-2xl shadow-2xl p-8 mb-8 border border-orange-200">
