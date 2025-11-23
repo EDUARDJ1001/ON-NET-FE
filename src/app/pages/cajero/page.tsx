@@ -20,15 +20,12 @@ const HomeCajero = () => {
                         </p>
 
                         <div className="flex flex-col gap-4">
-                            <button className="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-full font-semibold">
+                            <a href="/pages/cajero/pago" className="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-full font-semibold">
                                 Registrar Pago
-                            </button>
-                            <button className="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-full font-semibold">
-                                Ver Historial de Pagos
-                            </button>
-                            <button className="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-full font-semibold">
+                            </a>
+                            <a href="/pages/cajero/clientes" className="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-full font-semibold">
                                 Buscar Cliente
-                            </button>
+                            </a>
                         </div>
                     </div>
                 </main>
