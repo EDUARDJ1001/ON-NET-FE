@@ -1,6 +1,7 @@
 "use client";
 
 import HeaderCajero from "@/app/components/headerCajero";
+import Pendientes from '../admin/caja/pendientes/page';
 
 
 
@@ -25,6 +26,9 @@ const HomeCajero = () => {
                             </a>
                             <a href="/pages/cajero/clientes" className="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-full font-semibold">
                                 Buscar Cliente
+                            </a>
+                            <a href="/pages/cajero/pendientes" className="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-full font-semibold">
+                                Ver Clientes Pendientes
                             </a>
                         </div>
                     </div>
