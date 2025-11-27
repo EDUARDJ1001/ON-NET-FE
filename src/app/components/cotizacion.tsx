@@ -314,12 +314,11 @@ const Cotizacion = () => {
             <div class="section-title">Datos del Cliente</div>
             <div class="client-data">
               <div><strong>Nombre:</strong> ${cotizacionData.cliente.nombre}</div>
-              ${
-                  cotizacionData.cliente.rtn &&
-                  cotizacionData.cliente.rtn.trim() !== ""
-                      ? `<div><strong>RTN:</strong> ${cotizacionData.cliente.rtn}</div>`
-                      : ""
-              }
+              ${cotizacionData.cliente.rtn &&
+                    cotizacionData.cliente.rtn.trim() !== ""
+                    ? `<div><strong>RTN:</strong> ${cotizacionData.cliente.rtn}</div>`
+                    : ""
+                }
               <div><strong>Teléfono:</strong> ${cotizacionData.cliente.telefono}</div>
               <div style="grid-column: 1 / -1;">
                 <strong>Dirección:</strong> ${cotizacionData.cliente.direccion}
@@ -395,7 +394,7 @@ const Cotizacion = () => {
 
             const options = {
                 margin: 10,
-                filename: `cotizacion_${cotizacionData.cliente.nombre.replace(
+                filename: `cotizacion_onnet_${cotizacionData.cliente.nombre.replace(
                     /\s+/g,
                     "_"
                 )}.pdf`,
@@ -430,6 +429,233 @@ const Cotizacion = () => {
             setGenerandoPdf(false);
         }
     };
+
+    const descargarPDFSinISV = async () => {
+        if (!cotizacionData) return;
+
+        setGenerandoPdf(true);
+
+        try {
+            const filasItems = cotizacionData.items
+                .map((item, index) => {
+                    const totalLinea = item.cantidad * item.precioUnitario; // total con ISV
+                    return `
+      <tr>
+        <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: center;">
+          ${index + 1}
+        </td>
+        <td style="padding: 6px 8px; border: 1px solid #ccc;">
+          ${item.concepto}
+        </td>
+        <td style="padding: 6px 8px; border: 1px solid #ccc;">
+          ${item.descripcion || ""}
+        </td>
+        <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: center;">
+          ${item.cantidad}
+        </td>
+        <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: right;">
+          L. ${formatCurrency(item.precioUnitario)}
+        </td>
+        <td style="padding: 6px 8px; border: 1px solid #ccc; text-align: right;">
+          L. ${formatCurrency(totalLinea)}
+        </td>
+      </tr>
+    `;
+                })
+                .join("");
+
+            // TOTAL SIN ISV = suma directa de lo que el usuario ingresó
+            const totalPDF = cotizacionData.items.reduce(
+                (acc, item) => acc + item.cantidad * item.precioUnitario,
+                0
+            );
+
+            const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 2px solid #333;
+      padding-bottom: 20px;
+      position: relative;
+      padding-top: 30px;
+    }
+    .company-name {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .service-type {
+      font-size: 20px;
+      color: #2563eb;
+      margin-bottom: 10px;
+    }
+    .date {
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+    .section {
+      margin-bottom: 25px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 5px;
+    }
+    .client-data {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      border-top: 2px solid #333;
+      padding-top: 20px;
+      font-size: 12px;
+      color: #666;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th {
+      background-color: #f3f3f3;
+    }
+    th, td {
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <img src="${window.location.origin}/img/conectaprobg.png"
+      alt="ConectaPro"
+      style="width: 180px; position: absolute; top: 20px; left: 20px;">
+
+    <div style="margin-top: 40px;">
+      <div class="company-name">ON NET WIRELESS Y SERVICIOS</div>
+      <div class="service-type">Cotización de servicios</div>
+      <div class="date">Fecha: ${cotizacionData.fecha}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Datos del Cliente</div>
+    <div class="client-data">
+      <div><strong>Nombre:</strong> ${cotizacionData.cliente.nombre}</div>
+      ${cotizacionData.cliente.rtn?.trim()
+                    ? `<div><strong>RTN:</strong> ${cotizacionData.cliente.rtn}</div>`
+                    : ""
+                }
+      <div><strong>Teléfono:</strong> ${cotizacionData.cliente.telefono}</div>
+      <div style="grid-column: 1 / -1;"><strong>Dirección:</strong> ${cotizacionData.cliente.direccion}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Detalle de la Cotización</div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Concepto</th>
+          <th>Descripción</th>
+          <th>Cant.</th>
+          <th>Precio unitario (L.)</th>
+          <th>Total (L.)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filasItems}
+        <tr>
+          <td colspan="5" style="text-align: right; font-weight: bold;">TOTAL</td>
+          <td style="text-align: right; font-weight: bold;">
+            L. ${formatCurrency(totalPDF)}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer" style="padding-bottom: 20px;">
+    <img 
+      src="${window.location.origin}/img/ON-NET-BANNER.png"
+      alt="ON-NET Banner"
+      style="
+        display: block;
+        margin: 0 auto 15px;
+        width: 40%;
+        max-width: 900px;
+        max-height: 85px;
+        object-fit: contain;
+        padding: 0 20px;
+      "
+    >
+    <div style="font-size: 14px; font-weight: bold; margin-top: 10px;">
+        Gracias por considerar nuestros servicios. Esta cotización es válida por 15 días.
+    </div>
+  </div>
+
+</body>
+</html>
+`;
+
+            const options = {
+                margin: 10,
+                filename: `cotizacion_onnet_${cotizacionData.cliente.nombre.replace(
+                    /\s+/g,
+                    "_"
+                )}.pdf`,
+                image: {
+                    type: "jpeg" as const,
+                    quality: 0.98,
+                },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false,
+                    backgroundColor: "#ffffff",
+                },
+                jsPDF: {
+                    unit: "mm" as const,
+                    format: "a4" as const,
+                    orientation: "portrait" as const,
+                },
+            };
+
+            const tempDiv = document.createElement("div");
+            tempDiv.innerHTML = htmlContent;
+            document.body.appendChild(tempDiv);
+
+            await html2pdf().set(options).from(tempDiv).save();
+
+            document.body.removeChild(tempDiv);
+        } catch (error) {
+            console.error("Error generando PDF SIN ISV:", error);
+            alert("Error al generar el PDF. Intente nuevamente.");
+        } finally {
+            setGenerandoPdf(false);
+        }
+    };
+
+
 
     const clienteIncompleto =
         !clienteData.nombre.trim() ||
@@ -749,6 +975,14 @@ const Cotizacion = () => {
                                                 className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg transition"
                                             >
                                                 Seguir editando
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={descargarPDFSinISV}
+                                                disabled={generandoPdf}
+                                                className="bg-green-600 hover:bg-green-700 text-white py-2 px-6 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {generandoPdf ? "Generando..." : "Descargar sin ISV"}
                                             </button>
                                             <button
                                                 type="button"
