@@ -39,7 +39,7 @@ interface Cliente {
   fecha_instalacion: string;
   descripcion?: EstadoNombre;
   estados: EstadoMensual[];
-  plan?: Plan; // si viene poblado desde el API
+  plan?: Plan;
 }
 
 const HNL = new Intl.NumberFormat("es-HN", {
@@ -116,17 +116,15 @@ const buildMapLinks = (coordenadas?: string, direccion?: string) => {
     : null;
 };
 
-// Helper para mapear estado_id/descripcion a ID numérico
 const getEstadoId = (c: Cliente): number => {
   if (typeof c.estado_id === "number") return c.estado_id;
   const d = (c.descripcion || "").toLowerCase();
   if (d === "activo") return 1;
   if (d === "inactivo") return 2;
   if (d === "suspendido") return 3;
-  return 0; // desconocido
+  return 0;
 };
 
-/** Devuelve los meses (1-12) adeudados del año actual hasta el mes actual (inclusive) */
 const obtenerMesesAdeudados = (
   cliente: Cliente,
   anioActual: number,
@@ -137,10 +135,7 @@ const obtenerMesesAdeudados = (
     const estado = cliente.estados?.find(
       (e) => e.mes === m && e.anio === anioActual
     )?.estado;
-    if (estado !== "Pagado") {
-      // cuenta "Pendiente", "Pagado Parcial" o "Sin estado"
-      meses.push(m);
-    }
+    if (estado !== "Pagado") meses.push(m);
   }
   return meses;
 };
@@ -160,21 +155,65 @@ const GestionClientes = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // NUEVO: búsqueda y filtros por estado
   const [searchTerm, setSearchTerm] = useState("");
   const [estadoFilters, setEstadoFilters] = useState<{ [k: number]: boolean }>(
-    {
-      1: false, // Activo
-      2: false, // Inactivo
-      3: false, // Suspendido
-    }
+    { 1: false, 2: false, 3: false }
   );
+
+  // ✅ Cache de estados por cliente y año
+  const [estadosCache, setEstadosCache] = useState<
+    Record<number, Record<number, EstadoMensual[]>>
+  >({});
+
+  // ====== Helpers sin "any" ======
+  const isRecord = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null;
+
+  const toNumber = (v: unknown): number => {
+    if (typeof v === "number") return v;
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : NaN;
+    }
+    return NaN;
+  };
+
+  const toStringSafe = (v: unknown): string => {
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    return "";
+  };
+
+  const normalizarEstados = (payload: unknown): EstadoMensual[] => {
+    if (!Array.isArray(payload)) return [];
+    const out: EstadoMensual[] = [];
+
+    for (const item of payload) {
+      if (!isRecord(item)) continue;
+
+      const mes = toNumber(item.mes);
+      const anio = toNumber(item.anio);
+      const estado = toStringSafe(item.estado);
+
+      if (
+        Number.isFinite(mes) &&
+        Number.isFinite(anio) &&
+        mes >= 1 &&
+        mes <= 12 &&
+        anio > 0
+      ) {
+        out.push({ mes, anio, estado });
+      }
+    }
+
+    return out;
+  };
 
   const cargarPlanes = async (): Promise<PlanMap> => {
     try {
       const resp = await fetch(`${apiHost}/api/planes`);
       if (!resp.ok) return {};
-      const data: Plan[] = await resp.json();
+      const data = (await resp.json()) as Plan[];
       const mapa: PlanMap = {};
       data.forEach((p) => {
         mapa[p.id] = p;
@@ -195,14 +234,17 @@ const GestionClientes = () => {
         `${apiHost}/api/estado-mensual/cliente/${clienteId}/anio/${anio}`
       );
       if (response.ok) {
-        const estados = await response.json();
-        if (Array.isArray(estados) && estados.length > 0) return estados;
+        const raw = (await response.json()) as unknown;
+        const estados = normalizarEstados(raw);
+        if (estados.length > 0) return estados;
       }
-    } catch (error) {
-      console.error("Error al obtener estados:", error);
+    } catch (e) {
+      console.error("Error al obtener estados:", e);
     }
 
-    // Inicializa 12 meses si no existen
+    // ✅ Recomendado: NO crear históricos automáticamente
+    if (anio < anioActual) return [];
+
     const nuevosEstados = await Promise.all(
       Array.from({ length: 12 }, async (_, i) => {
         const mes = i + 1;
@@ -217,15 +259,36 @@ const GestionClientes = () => {
               estado: "Pendiente",
             }),
           });
-          return res.ok ? { mes, anio, estado: "Pendiente" } : null;
-        } catch (error) {
-          console.error("Error al crear estado:", error);
+          return res.ok ? ({ mes, anio, estado: "Pendiente" } as EstadoMensual) : null;
+        } catch (e) {
+          console.error("Error al crear estado:", e);
           return null;
         }
       })
     );
 
-    return nuevosEstados.filter(Boolean) as EstadoMensual[];
+    return nuevosEstados.filter(
+      (x): x is EstadoMensual => x !== null
+    );
+  };
+
+  const cargarEstadosAnio = async (clienteId: number, anio: number) => {
+    if (estadosCache[clienteId]?.[anio]?.length) return;
+
+    const estados = await obtenerOInicializarEstados(clienteId, anio);
+
+    setEstadosCache((prev) => ({
+      ...prev,
+      [clienteId]: {
+        ...(prev[clienteId] || {}),
+        [anio]: estados,
+      },
+    }));
+  };
+
+  const cambiarAnio = async (clienteId: number, nuevoAnio: number) => {
+    setAniosCliente((prev) => ({ ...prev, [clienteId]: nuevoAnio }));
+    await cargarEstadosAnio(clienteId, nuevoAnio);
   };
 
   const fetchClientes = async () => {
@@ -233,18 +296,28 @@ const GestionClientes = () => {
     setError(null);
     try {
       const res = await fetch(`${apiHost}/api/clientes`);
-      const data = await res.json();
+      const data = (await res.json()) as unknown;
+
       if (!Array.isArray(data)) throw new Error("Respuesta inesperada del servidor");
 
-      // estados del año actual
       const year = anioActual;
+
       const clientesConEstados: Cliente[] = await Promise.all(
-        data.map(async (cliente: Cliente) => {
+        (data as Cliente[]).map(async (cliente) => {
           try {
             const estados = await obtenerOInicializarEstados(cliente.id, year);
+
+            setEstadosCache((prev) => ({
+              ...prev,
+              [cliente.id]: {
+                ...(prev[cliente.id] || {}),
+                [year]: estados,
+              },
+            }));
+
             return { ...cliente, estados };
-          } catch (error) {
-            console.error(`Error con cliente ${cliente.id}:`, error);
+          } catch (e) {
+            console.error(`Error con cliente ${cliente.id}:`, e);
             return { ...cliente, estados: [] };
           }
         })
@@ -253,20 +326,18 @@ const GestionClientes = () => {
       setClientes(clientesConEstados);
       setClientesFiltrados(clientesConEstados);
 
-      // cargar planes si faltan
       const faltaPlan = clientesConEstados.some(
         (c) => !c.plan || typeof c.plan.precio_mensual !== "number"
       );
       if (faltaPlan) await cargarPlanes();
-    } catch (err) {
-      console.error("Error al obtener clientes:", err);
+    } catch (e) {
+      console.error("Error al obtener clientes:", e);
       setError("No se pudo cargar la lista de clientes.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Conteos por estado (sobre el total, para mostrar info)
   const counts = useMemo(() => {
     const base = { total: clientes.length, a: 0, i: 0, s: 0 };
     for (const c of clientes) {
@@ -278,11 +349,9 @@ const GestionClientes = () => {
     return base;
   }, [clientes]);
 
-  // Filtro combinado (búsqueda + checks de estado)
   const filtradosMemo = useMemo(() => {
     let base = [...clientes];
 
-    // búsqueda
     const term = searchTerm.trim().toLowerCase();
     if (term) {
       base = base.filter(
@@ -295,7 +364,6 @@ const GestionClientes = () => {
       );
     }
 
-    // estados (si no hay checks activos => TODOS)
     const activos = Object.entries(estadoFilters)
       .filter(([, v]) => v)
       .map(([k]) => Number(k));
@@ -307,15 +375,12 @@ const GestionClientes = () => {
     return base;
   }, [clientes, searchTerm, estadoFilters]);
 
-  // Sincroniza lista filtrada y resetea paginación
   useEffect(() => {
     setClientesFiltrados(filtradosMemo);
     setCurrentPage(1);
   }, [filtradosMemo]);
 
-  const handleSearch = (val: string) => {
-    setSearchTerm(val || "");
-  };
+  const handleSearch = (val: string) => setSearchTerm(val || "");
 
   const handleEliminar = async (id: number) => {
     const clienteAEliminar = clientes.find((cliente) => cliente.id === id);
@@ -342,9 +407,7 @@ const GestionClientes = () => {
           method: "DELETE",
         });
 
-        if (!response.ok) {
-          throw new Error("Error en la respuesta del servidor");
-        }
+        if (!response.ok) throw new Error("Error en la respuesta del servidor");
 
         setClientes(clientes.filter((cliente) => cliente.id !== id));
         setClientesFiltrados(
@@ -356,8 +419,8 @@ const GestionClientes = () => {
           `El cliente <strong>${clienteAEliminar.nombre}</strong> ha sido eliminado correctamente.`,
           "success"
         );
-      } catch (error) {
-        console.error("Error al eliminar cliente:", error);
+      } catch (e) {
+        console.error("Error al eliminar cliente:", e);
         await Swal.fire(
           "Error",
           `No se pudo eliminar a ${clienteAEliminar.nombre}`,
@@ -375,16 +438,13 @@ const GestionClientes = () => {
     indexOfLastClient
   );
 
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-  };
+  const handlePageChange = (page: number) => setCurrentPage(page);
 
   useEffect(() => {
     fetchClientes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ====== Cálculos de adeudos para Suspendidos (sobre la lista visible) ======
   const suspendidosVisibles = useMemo(
     () => clientesFiltrados.filter((c) => getEstadoId(c) === 3),
     [clientesFiltrados]
@@ -406,16 +466,12 @@ const GestionClientes = () => {
 
   const mostrarBannerSuspendidos =
     suspendidosVisibles.length > 0 &&
-    // mostramos banner si el filtro incluye explícitamente suspendidos
     (estadoFilters[3] ||
-      // o si no hay filtros activos (vista general) pero hay suspendidos visibles
       (!estadoFilters[1] && !estadoFilters[2] && !estadoFilters[3]));
 
   return (
     <AdminLayout>
-      {/* Contenedor principal con mejor espaciado */}
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        {/* Header con título y botón */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-orange-600">
@@ -452,7 +508,6 @@ const GestionClientes = () => {
           </Link>
         </div>
 
-        {/* Barra de búsqueda */}
         <div className="mb-4">
           <SearchDropdown
             items={clientNames}
@@ -462,9 +517,7 @@ const GestionClientes = () => {
           />
         </div>
 
-        {/* Filtros por estado + resumen */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Checkboxes */}
           <div className="flex flex-wrap items-center gap-3">
             <label className="inline-flex items-center gap-2 text-sm">
               <input
@@ -517,7 +570,6 @@ const GestionClientes = () => {
               </span>
             </label>
 
-            {/* Botón “Todos” */}
             <button
               type="button"
               onClick={() => setEstadoFilters({ 1: false, 2: false, 3: false })}
@@ -528,32 +580,29 @@ const GestionClientes = () => {
             </button>
           </div>
 
-          {/* Resumen conteos */}
           <div className="text-sm text-slate-600">
-            Mostrando <span className="font-semibold">{clientesFiltrados.length}</span> de{" "}
-            <span className="font-semibold">{counts.total}</span> clientes —{" "}
+            Mostrando <span className="font-semibold">{clientesFiltrados.length}</span>{" "}
+            de <span className="font-semibold">{counts.total}</span> clientes —{" "}
             <span className="text-green-700 font-medium">{counts.a} activos</span>,{" "}
             <span className="text-gray-700 font-medium">{counts.i} inactivos</span>,{" "}
             <span className="text-yellow-700 font-medium">{counts.s} suspendidos</span>.
           </div>
         </div>
 
-        {/* Banner resumen para Suspendidos */}
         {mostrarBannerSuspendidos && (
           <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
             <p className="text-yellow-800 text-sm">
-              Suspendidos visibles:{" "}
-              <strong>{resumenSuspendidos.totalClientes}</strong>{" "}
-              {resumenSuspendidos.totalClientes === 1 ? "cliente" : "clientes"} | Total adeudado:{" "}
-              <strong>{HNL.format(resumenSuspendidos.totalAdeudado)}</strong>{" "}
+              Suspendidos visibles: <strong>{resumenSuspendidos.totalClientes}</strong>{" "}
+              {resumenSuspendidos.totalClientes === 1 ? "cliente" : "clientes"} | Total
+              adeudado: <strong>{HNL.format(resumenSuspendidos.totalAdeudado)}</strong>{" "}
               <span className="text-xs text-yellow-700">
-                (Se considera adeudado todo mes del año actual hasta {mesLargo[mesActual - 1]} que no esté en <b>Pagado</b>).
+                (Se considera adeudado todo mes del año actual hasta {mesLargo[mesActual - 1]}{" "}
+                que no esté en <b>Pagado</b>).
               </span>
             </p>
           </div>
         )}
 
-        {/* Contenido principal */}
         <div className="bg-white rounded-2xl shadow-lg border border-orange-200 p-6">
           {loading ? (
             <div className="text-center py-12">
@@ -572,9 +621,7 @@ const GestionClientes = () => {
             </div>
           ) : clientes.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-slate-600 text-lg mb-4">
-                No hay clientes registrados.
-              </p>
+              <p className="text-slate-600 text-lg mb-4">No hay clientes registrados.</p>
               <Link
                 href="/pages/admin/clientes/registrar"
                 className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
@@ -596,37 +643,38 @@ const GestionClientes = () => {
               <div className="grid gap-4 md:hidden">
                 {currentClients.map((cliente) => {
                   const anio = aniosCliente[cliente.id] || anioActual;
-                  const maps = buildMapLinks(
-                    cliente.coordenadas,
-                    cliente.direccion
-                  );
+                  const maps = buildMapLinks(cliente.coordenadas, cliente.direccion);
                   const esSuspendido = getEstadoId(cliente) === 3;
 
-                  // cálculo adeudado para suspendidos
+                  const estadosDelAnio =
+                    estadosCache[cliente.id]?.[anio] ??
+                    cliente.estados?.filter((e) => e.anio === anio) ??
+                    [];
+
                   const precio =
                     cliente.plan?.precio_mensual ??
                     planes[cliente.plan_id]?.precio_mensual ??
                     0;
+
                   const mesesAdeudados = esSuspendido
                     ? obtenerMesesAdeudados(cliente, anioActual, mesActual)
                     : [];
-                  const montoAdeudado =
-                    esSuspendido ? precio * mesesAdeudados.length : 0;
+
+                  const montoAdeudado = esSuspendido
+                    ? precio * mesesAdeudados.length
+                    : 0;
 
                   return (
                     <div
                       key={cliente.id}
                       className="rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow"
                     >
-                      {/* Header de la tarjeta */}
                       <div className="flex items-start justify-between gap-3 mb-2">
                         <div className="flex-1 min-w-0">
                           <h3 className="text-lg font-semibold text-orange-700 truncate">
                             {cliente.nombre}
                           </h3>
-                          <p className="text-sm text-slate-600">
-                            {cliente.telefono}
-                          </p>
+                          <p className="text-sm text-slate-600">{cliente.telefono}</p>
                           <p className="text-sm text-slate-500 break-words mt-1">
                             {cliente.direccion}
                           </p>
@@ -636,7 +684,6 @@ const GestionClientes = () => {
                         </div>
                       </div>
 
-                      {/* Resumen adeudado si suspendido */}
                       {esSuspendido && (
                         <div className="mb-3 p-2 rounded-lg bg-yellow-50 border border-yellow-200">
                           <div className="flex items-center justify-between">
@@ -665,7 +712,6 @@ const GestionClientes = () => {
                         </div>
                       )}
 
-                      {/* Ubicación */}
                       {maps && (
                         <div className="mb-3">
                           <a
@@ -679,30 +725,19 @@ const GestionClientes = () => {
                         </div>
                       )}
 
-                      {/* Controles de año */}
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-sm font-medium text-slate-600">
                           Año: {anio}
                         </span>
                         <div className="flex gap-2">
                           <button
-                            onClick={() =>
-                              setAniosCliente((prev) => ({
-                                ...prev,
-                                [cliente.id]: anio - 1,
-                              }))
-                            }
+                            onClick={() => cambiarAnio(cliente.id, anio - 1)}
                             className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
                           >
                             ← Anterior
                           </button>
                           <button
-                            onClick={() =>
-                              setAniosCliente((prev) => ({
-                                ...prev,
-                                [cliente.id]: anio + 1,
-                              }))
-                            }
+                            onClick={() => cambiarAnio(cliente.id, anio + 1)}
                             className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
                           >
                             Siguiente →
@@ -710,7 +745,6 @@ const GestionClientes = () => {
                         </div>
                       </div>
 
-                      {/* Estados mensuales */}
                       <div className="mb-4">
                         <div className="grid grid-cols-4 gap-2">
                           {[
@@ -727,9 +761,10 @@ const GestionClientes = () => {
                             "Nov",
                             "Dic",
                           ].map((mes, index) => {
-                            const estado = cliente.estados?.find(
-                              (e) => e.mes === index + 1 && e.anio === anio
+                            const estado = estadosDelAnio.find(
+                              (e) => e.mes === index + 1
                             );
+
                             let bgColor = "bg-slate-100";
                             let textColor = "text-slate-600";
 
@@ -760,7 +795,6 @@ const GestionClientes = () => {
                         </div>
                       </div>
 
-                      {/* Botones de acción */}
                       <div className="flex gap-2">
                         <button
                           onClick={() => setModalCliente(cliente)}
@@ -792,32 +826,39 @@ const GestionClientes = () => {
                         <th className="px-4 py-3 text-left font-semibold">Dirección</th>
                         <th className="px-4 py-3 text-left font-semibold">Ubicación</th>
                         <th className="px-4 py-3 text-left font-semibold">Estado</th>
-                        <th className="px-4 py-3 text-left font-semibold">Estados de Pago</th>
-                        {/* Columna nueva condicional para Suspendidos */}
+                        <th className="px-4 py-3 text-left font-semibold">
+                          Estados de Pago
+                        </th>
                         <th className="px-4 py-3 text-left font-semibold">
                           Adeudado (si Suspendido)
                         </th>
                         <th className="px-4 py-3 text-left font-semibold">Acciones</th>
                       </tr>
                     </thead>
+
                     <tbody className="divide-y divide-slate-200">
                       {currentClients.map((cliente) => {
                         const anio = aniosCliente[cliente.id] || anioActual;
-                        const maps = buildMapLinks(
-                          cliente.coordenadas,
-                          cliente.direccion
-                        );
+                        const maps = buildMapLinks(cliente.coordenadas, cliente.direccion);
                         const esSuspendido = getEstadoId(cliente) === 3;
+
+                        const estadosDelAnio =
+                          estadosCache[cliente.id]?.[anio] ??
+                          cliente.estados?.filter((e) => e.anio === anio) ??
+                          [];
 
                         const precio =
                           cliente.plan?.precio_mensual ??
                           planes[cliente.plan_id]?.precio_mensual ??
                           0;
+
                         const mesesAdeudados = esSuspendido
                           ? obtenerMesesAdeudados(cliente, anioActual, mesActual)
                           : [];
-                        const montoAdeudado =
-                          esSuspendido ? precio * mesesAdeudados.length : 0;
+
+                        const montoAdeudado = esSuspendido
+                          ? precio * mesesAdeudados.length
+                          : 0;
 
                         return (
                           <tr key={cliente.id} className="hover:bg-orange-50">
@@ -848,6 +889,7 @@ const GestionClientes = () => {
                             <td className="px-4 py-3">
                               {badgeEstado(cliente.descripcion, cliente.estado_id)}
                             </td>
+
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2 mb-2">
                                 <span className="text-sm text-slate-600">
@@ -855,54 +897,42 @@ const GestionClientes = () => {
                                 </span>
                                 <div className="flex gap-1">
                                   <button
-                                    onClick={() =>
-                                      setAniosCliente((prev) => ({
-                                        ...prev,
-                                        [cliente.id]: anio - 1,
-                                      }))
-                                    }
+                                    onClick={() => cambiarAnio(cliente.id, anio - 1)}
                                     className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
                                   >
                                     ←
                                   </button>
                                   <button
-                                    onClick={() =>
-                                      setAniosCliente((prev) => ({
-                                        ...prev,
-                                        [cliente.id]: anio + 1,
-                                      }))
-                                    }
+                                    onClick={() => cambiarAnio(cliente.id, anio + 1)}
                                     className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded"
                                   >
                                     →
                                   </button>
                                 </div>
                               </div>
+
                               <div className="grid grid-cols-6 gap-1">
                                 {["E", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"].map(
                                   (mes, index) => {
-                                    const estado = cliente.estados?.find(
-                                      (e) =>
-                                        e.mes === index + 1 && e.anio === anio
+                                    const estado = estadosDelAnio.find(
+                                      (e) => e.mes === index + 1
                                     );
+
                                     let color = "bg-slate-100 text-slate-600";
 
                                     if (estado?.estado === "Pagado")
                                       color = "bg-green-100 text-green-700";
-                                    else if (
-                                      estado?.estado === "Pagado Parcial"
-                                    )
+                                    else if (estado?.estado === "Pagado Parcial")
                                       color = "bg-yellow-100 text-yellow-700";
                                     else if (estado?.estado === "Pendiente")
                                       color = "bg-red-100 text-red-700";
-                                    else if (estado?.estado === "Suspendido")
-                                      color = "bg-gray-400 text-gray-700";
 
                                     return (
                                       <div
                                         key={index}
                                         className={`p-1 rounded text-center text-xs ${color}`}
-                                        title={`${[
+                                        title={`${
+                                          [
                                             "Ene",
                                             "Feb",
                                             "Mar",
@@ -916,7 +946,7 @@ const GestionClientes = () => {
                                             "Nov",
                                             "Dic",
                                           ][index]
-                                          }: ${estado?.estado || "Sin estado"}`}
+                                        }: ${estado?.estado || "Sin estado"}`}
                                       >
                                         {mes}
                                       </div>
@@ -926,7 +956,6 @@ const GestionClientes = () => {
                               </div>
                             </td>
 
-                            {/* Adeudado si suspendido */}
                             <td className="px-4 py-3 align-top">
                               {esSuspendido ? (
                                 <div>
@@ -946,9 +975,7 @@ const GestionClientes = () => {
                                       ))}
                                     </div>
                                   ) : (
-                                    <span className="text-xs text-slate-400">
-                                      —
-                                    </span>
+                                    <span className="text-xs text-slate-400">—</span>
                                   )}
                                 </div>
                               ) : (
@@ -980,7 +1007,6 @@ const GestionClientes = () => {
                 </div>
               </div>
 
-              {/* Paginación */}
               {clientesFiltrados.length > itemsPerPage && (
                 <div className="mt-8">
                   <Pagination
