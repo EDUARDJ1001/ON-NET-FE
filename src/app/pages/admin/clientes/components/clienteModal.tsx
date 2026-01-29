@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 interface Estado {
   mes: number;
@@ -14,13 +14,14 @@ interface Cliente {
   ip: string;
   direccion: string;
   telefono: string;
+  vineta: string | null;
   pass_onu: string;
-  coordenadas: string;
+  coordenadas: string | null;
   plan_id: number;
-  dia_pago: number;
+  dia_pago: number | null;
   estado_id?: number;
   estados: Estado[];
-  fecha_instalacion: string;
+  fecha_instalacion: string | null;
 }
 
 interface ClienteModalProps {
@@ -45,36 +46,75 @@ const MESES = [
   "Diciembre",
 ];
 
-const ClienteModal = ({
-  cliente,
-  onClose,
-  onClienteUpdated,
-  apiHost,
-}: ClienteModalProps) => {
-  const [form, setForm] = useState<Cliente>(cliente);
-  const [editando, setEditando] = useState(false);
-  const [mensaje, setMensaje] = useState("");
-  const [planes, setPlanes] = useState<{ id: number; nombre: string }[]>([]);
-  const [guardando, setGuardando] = useState(false);
+// Form interno del modal (inputs siempre string/number controlados)
+interface ClienteForm {
+  nombre: string;
+  ip: string;
+  direccion: string;
+  telefono: string;
+  vineta: string; // input
+  pass_onu: string;
+  coordenadas: string; // input
+  plan_id: number | "";
+  dia_pago: string; // input -> luego number|null
+  estado_id: number | "";
+  fecha_instalacion: string; // YYYY-MM-DD
+}
 
+const ClienteModal = ({ cliente, onClose, onClienteUpdated, apiHost }: ClienteModalProps) => {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const toInputDate = (value?: string | null) => {
     if (!value) return "";
-    // ya viene correcto
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
 
-    // viene como DD/MM/YYYY
     const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (m) return `${m[3]}-${m[2]}-${m[1]}`;
 
-    // viene como ISO (evitar desfases por zona horaria)
     const d = new Date(value);
     if (isNaN(d.getTime())) return "";
     const off = d.getTimezoneOffset();
     const local = new Date(d.getTime() - off * 60000);
     return local.toISOString().slice(0, 10);
   };
+
+  const [form, setForm] = useState<ClienteForm>(() => ({
+    nombre: cliente.nombre ?? "",
+    ip: cliente.ip ?? "",
+    direccion: cliente.direccion ?? "",
+    telefono: cliente.telefono ?? "",
+    vineta: cliente.vineta ?? "",
+    pass_onu: cliente.pass_onu ?? "",
+    coordenadas: cliente.coordenadas ?? "",
+    plan_id: typeof cliente.plan_id === "number" ? cliente.plan_id : "",
+    dia_pago: cliente.dia_pago !== null && cliente.dia_pago !== undefined ? String(cliente.dia_pago) : "",
+    estado_id: typeof cliente.estado_id === "number" ? cliente.estado_id : "",
+    fecha_instalacion: toInputDate(cliente.fecha_instalacion),
+  }));
+
+  const [editando, setEditando] = useState(false);
+  const [mensaje, setMensaje] = useState("");
+  const [planes, setPlanes] = useState<{ id: number; nombre: string }[]>([]);
+  const [guardando, setGuardando] = useState(false);
+
+  // Si cambia el cliente (por ejemplo abrir otro), refrescar form
+  useEffect(() => {
+    setForm({
+      nombre: cliente.nombre ?? "",
+      ip: cliente.ip ?? "",
+      direccion: cliente.direccion ?? "",
+      telefono: cliente.telefono ?? "",
+      vineta: cliente.vineta ?? "",
+      pass_onu: cliente.pass_onu ?? "",
+      coordenadas: cliente.coordenadas ?? "",
+      plan_id: typeof cliente.plan_id === "number" ? cliente.plan_id : "",
+      dia_pago: cliente.dia_pago !== null && cliente.dia_pago !== undefined ? String(cliente.dia_pago) : "",
+      estado_id: typeof cliente.estado_id === "number" ? cliente.estado_id : "",
+      fecha_instalacion: toInputDate(cliente.fecha_instalacion),
+    });
+    setEditando(false);
+    setMensaje("");
+  }, [cliente]);
 
   // Bloquear scroll del body mientras el modal está abierto
   useEffect(() => {
@@ -103,8 +143,22 @@ const ClienteModal = ({
     const fetchPlanes = async () => {
       try {
         const res = await fetch(`${apiHost}/api/planes`);
-        const data = await res.json();
-        setPlanes(data);
+        const data = (await res.json()) as unknown;
+
+        if (Array.isArray(data)) {
+          const safe = data
+            .map((p) => {
+              if (!p || typeof p !== "object") return null;
+              const obj = p as Record<string, unknown>;
+              const id = typeof obj.id === "number" ? obj.id : Number(obj.id);
+              const nombre = typeof obj.nombre === "string" ? obj.nombre : "";
+              if (!Number.isFinite(id)) return null;
+              return { id, nombre };
+            })
+            .filter((x): x is { id: number; nombre: string } => x !== null);
+
+          setPlanes(safe);
+        }
       } catch (error) {
         console.error("Error al cargar planes:", error);
       }
@@ -116,25 +170,56 @@ const ClienteModal = ({
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-    // plan_id debe mantenerse como número
+
     if (name === "plan_id") {
-      setForm((prev) => ({
-        ...prev,
-        plan_id: value ? Number(value) : ("" as unknown as number),
-      }));
-    } else {
-      setForm((prev) => ({ ...prev, [name]: value }));
+      const v = value === "" ? "" : Number(value);
+      setForm((prev) => ({ ...prev, plan_id: v }));
+      return;
     }
+
+    if (name === "estado_id") {
+      const v = value === "" ? "" : Number(value);
+      setForm((prev) => ({ ...prev, estado_id: v }));
+      return;
+    }
+
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleGuardar = async () => {
     setGuardando(true);
     setMensaje("");
+
     try {
-      // Asegurarse de que la fecha esté en formato YYYY-MM-DD
+      // Normalizaciones
+      const vinetaValue = form.vineta.trim() === "" ? null : form.vineta.trim();
+      const coordenadasValue = form.coordenadas.trim() === "" ? null : form.coordenadas.trim();
+
+      // dia_pago: string -> number|null
+      const diaPagoTrim = form.dia_pago.trim();
+      const diaPagoNum = diaPagoTrim === "" ? null : Number(diaPagoTrim);
+      const dia_pago = diaPagoTrim === "" ? null : (Number.isFinite(diaPagoNum) ? diaPagoNum : null);
+
+      // fecha_instalacion ya viene YYYY-MM-DD desde input date
+      const fecha_instalacion = form.fecha_instalacion || null;
+
+      // plan_id requerido en tu backend, pero aquí mantenemos seguridad:
+      const plan_id = form.plan_id === "" ? cliente.plan_id : form.plan_id;
+
+      const estado_id = form.estado_id === "" ? undefined : form.estado_id;
+
       const datosParaEnviar = {
-        ...form,
-        fecha_instalacion: form.fecha_instalacion.split('T')[0] // Solo la parte de la fecha
+        nombre: form.nombre,
+        ip: form.ip,
+        direccion: form.direccion,
+        telefono: form.telefono,
+        vineta: vinetaValue,
+        pass_onu: form.pass_onu,
+        coordenadas: coordenadasValue,
+        plan_id,
+        dia_pago,
+        estado_id,
+        fecha_instalacion,
       };
 
       const res = await fetch(`${apiHost}/api/clientes/${cliente.id}`, {
@@ -201,11 +286,12 @@ const ClienteModal = ({
               <input
                 type="text"
                 name="nombre"
-                value={form.nombre ?? ""}
+                value={form.nombre}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
-                  }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
               />
             </div>
 
@@ -215,15 +301,32 @@ const ClienteModal = ({
               <input
                 type="text"
                 name="telefono"
-                value={form.telefono ?? ""}
+                value={form.telefono}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
-                  }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
               />
             </div>
 
-            {/* Fecha de instalación - NUEVO CAMPO */}
+            {/* ✅ VINETA */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-slate-600 mb-1">Viñeta</label>
+              <input
+                type="text"
+                name="vineta"
+                value={form.vineta}
+                onChange={handleChange}
+                readOnly={!editando}
+                placeholder="Código de viñeta (opcional)"
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
+              />
+            </div>
+
+            {/* Fecha de instalación */}
             <div className="flex flex-col">
               <label className="text-xs font-medium text-slate-600 mb-1">
                 Fecha de instalación
@@ -231,10 +334,12 @@ const ClienteModal = ({
               <input
                 type="date"
                 name="fecha_instalacion"
-                value={toInputDate(form.fecha_instalacion)}
+                value={form.fecha_instalacion}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""}`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
               />
             </div>
 
@@ -244,11 +349,12 @@ const ClienteModal = ({
               <input
                 type="text"
                 name="ip"
-                value={form.ip ?? ""}
+                value={form.ip}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
-                  }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
               />
             </div>
 
@@ -258,11 +364,12 @@ const ClienteModal = ({
               <input
                 type="text"
                 name="coordenadas"
-                value={form.coordenadas ?? ""}
+                value={form.coordenadas}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
-                  }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
               />
             </div>
 
@@ -271,29 +378,31 @@ const ClienteModal = ({
               <label className="text-xs font-medium text-slate-600 mb-1">Estado Cliente</label>
               <select
                 name="estado_id"
-                value={form.estado_id ?? ""}
+                value={form.estado_id}
                 onChange={handleChange}
                 disabled={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100 cursor-not-allowed" : ""
-                  }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100 cursor-not-allowed" : ""
+                }`}
               >
                 <option value="">Seleccionar estado</option>
-                <option value="1">Activo</option>
-                <option value="2">Inactivo</option>
-                <option value="3">Suspendido</option>
+                <option value={1}>Activo</option>
+                <option value={2}>Inactivo</option>
+                <option value={3}>Suspendido</option>
               </select>
             </div>
 
-            {/* direccion (ocupa 2 columnas en md) */}
+            {/* direccion */}
             <div className="flex flex-col md:col-span-2">
               <label className="text-xs font-medium text-slate-600 mb-1">Dirección</label>
               <textarea
                 name="direccion"
-                value={form.direccion ?? ""}
+                value={form.direccion}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md min-h-[72px] resize-y focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
-                  }`}
+                className={`w-full px-3 py-2 border rounded-md min-h-[72px] resize-y focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
               />
             </div>
 
@@ -303,11 +412,12 @@ const ClienteModal = ({
               <input
                 type="text"
                 name="pass_onu"
-                value={form.pass_onu ?? ""}
+                value={form.pass_onu}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
-                  }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
               />
             </div>
 
@@ -316,11 +426,12 @@ const ClienteModal = ({
               <label className="text-xs font-medium text-slate-700 mb-1">Plan</label>
               <select
                 name="plan_id"
-                value={form.plan_id ?? ""}
+                value={form.plan_id}
                 onChange={handleChange}
                 disabled={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100 text-gray-500" : ""
-                  }`}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100 text-gray-500" : ""
+                }`}
               >
                 <option value="">Selecciona un plan</option>
                 {planes.map((plan) => (
@@ -331,21 +442,23 @@ const ClienteModal = ({
               </select>
             </div>
 
-            {/* Fecha Pago */}
+            {/* Dia Pago */}
             <div className="flex flex-col">
-              <label className="text-xs font-medium text-slate-600 mb-1">Dia de Pago</label>
+              <label className="text-xs font-medium text-slate-600 mb-1">Día de Pago</label>
               <input
-                type="text"
+                type="number"
                 name="dia_pago"
-                value={form.dia_pago ?? ""}
+                value={form.dia_pago}
                 onChange={handleChange}
                 readOnly={!editando}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${!editando ? "bg-gray-100" : ""
-                  }`}
+                min={1}
+                max={31}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+                  !editando ? "bg-gray-100" : ""
+                }`}
               />
             </div>
           </div>
-
 
           {/* Estados de pago */}
           <div className="mt-6">
@@ -365,10 +478,10 @@ const ClienteModal = ({
                         e.estado === "Pagado"
                           ? "text-green-600 font-semibold"
                           : e.estado === "Pagado Parcial"
-                            ? "text-yellow-600 font-semibold"
-                            : e.estado === "Suspendido"
-                              ? "text-gray-800 font-semibold"
-                              : "text-red-600 font-semibold"
+                          ? "text-yellow-600 font-semibold"
+                          : e.estado === "Suspendido"
+                          ? "text-gray-800 font-semibold"
+                          : "text-red-600 font-semibold"
                       }
                     >
                       {e.estado}
@@ -383,7 +496,9 @@ const ClienteModal = ({
 
           {/* Mensaje */}
           {mensaje && (
-            <p className="mt-4 text-center text-sm font-semibold text-orange-600">{mensaje}</p>
+            <p className="mt-4 text-center text-sm font-semibold text-orange-600">
+              {mensaje}
+            </p>
           )}
         </div>
 
@@ -392,7 +507,29 @@ const ClienteModal = ({
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 justify-between">
             <div className="flex gap-2">
               <button
-                onClick={() => setEditando((v) => !v)}
+                onClick={() => {
+                  // cancelar edición: reset del form al valor original
+                  if (editando) {
+                    setForm({
+                      nombre: cliente.nombre ?? "",
+                      ip: cliente.ip ?? "",
+                      direccion: cliente.direccion ?? "",
+                      telefono: cliente.telefono ?? "",
+                      vineta: cliente.vineta ?? "",
+                      pass_onu: cliente.pass_onu ?? "",
+                      coordenadas: cliente.coordenadas ?? "",
+                      plan_id: typeof cliente.plan_id === "number" ? cliente.plan_id : "",
+                      dia_pago:
+                        cliente.dia_pago !== null && cliente.dia_pago !== undefined
+                          ? String(cliente.dia_pago)
+                          : "",
+                      estado_id: typeof cliente.estado_id === "number" ? cliente.estado_id : "",
+                      fecha_instalacion: toInputDate(cliente.fecha_instalacion),
+                    });
+                    setMensaje("");
+                  }
+                  setEditando((v) => !v);
+                }}
                 className="flex-1 sm:flex-none bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition"
               >
                 {editando ? "Cancelar Edición" : "Editar Cliente"}
