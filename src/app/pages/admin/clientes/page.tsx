@@ -94,7 +94,10 @@ const badgeEstado = (nombreEstado?: EstadoNombre, estado_id?: number) => {
   return <span className={cls}>{label}</span>;
 };
 
-const buildMapLinks = (coordenadas?: string | null, direccion?: string | null) => {
+const buildMapLinks = (
+  coordenadas?: string | null,
+  direccion?: string | null
+) => {
   const c = (coordenadas || "").trim();
   const latLngRegex = /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/;
 
@@ -126,21 +129,6 @@ const getEstadoId = (c: Cliente): number => {
   return 0;
 };
 
-const obtenerMesesAdeudados = (
-  cliente: Cliente,
-  anioActual: number,
-  mesActual: number
-): number[] => {
-  const meses: number[] = [];
-  for (let m = 1; m <= mesActual; m++) {
-    const estado = cliente.estados?.find(
-      (e) => e.mes === m && e.anio === anioActual
-    )?.estado;
-    if (estado !== "Pagado") meses.push(m);
-  }
-  return meses;
-};
-
 const GestionClientes = () => {
   const hoy = new Date();
   const mesActual = hoy.getMonth() + 1;
@@ -165,6 +153,11 @@ const GestionClientes = () => {
   const [estadosCache, setEstadosCache] = useState<
     Record<number, Record<number, EstadoMensual[]>>
   >({});
+
+  // ✅ Para deshabilitar botones mientras carga el año de un cliente
+  const [loadingEstados, setLoadingEstados] = useState<Record<string, boolean>>(
+    {}
+  );
 
   // ====== Helpers sin "any" ======
   const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -270,7 +263,6 @@ const GestionClientes = () => {
       const resp = await fetch(`${apiHost}/api/planes`);
       if (!resp.ok) return {};
       const data = (await resp.json()) as unknown;
-
       if (!Array.isArray(data)) return {};
 
       const mapa: PlanMap = {};
@@ -312,6 +304,7 @@ const GestionClientes = () => {
     // ✅ Recomendado: NO crear históricos automáticamente
     if (anio < anioActual) return [];
 
+    // Crear solo año actual si no existen
     const nuevosEstados = await Promise.all(
       Array.from({ length: 12 }, async (_, i) => {
         const mes = i + 1;
@@ -326,7 +319,9 @@ const GestionClientes = () => {
               estado: "Pendiente",
             }),
           });
-          return res.ok ? ({ mes, anio, estado: "Pendiente" } as EstadoMensual) : null;
+          return res.ok
+            ? ({ mes, anio, estado: "Pendiente" } as EstadoMensual)
+            : null;
         } catch (e) {
           console.error("Error al crear estado:", e);
           return null;
@@ -338,17 +333,27 @@ const GestionClientes = () => {
   };
 
   const cargarEstadosAnio = async (clienteId: number, anio: number) => {
-    if (estadosCache[clienteId]?.[anio]?.length) return;
+    // Si ya está cacheado (aunque sea vacío), no volver a pedir:
+    // (nota: dejamos pedir si NO existe la llave; si existe con [], significa "consultado y no hay")
+    if (estadosCache[clienteId] && Object.prototype.hasOwnProperty.call(estadosCache[clienteId], anio)) {
+      return;
+    }
 
-    const estados = await obtenerOInicializarEstados(clienteId, anio);
+    const key = `${clienteId}-${anio}`;
+    setLoadingEstados((prev) => ({ ...prev, [key]: true }));
 
-    setEstadosCache((prev) => ({
-      ...prev,
-      [clienteId]: {
-        ...(prev[clienteId] || {}),
-        [anio]: estados,
-      },
-    }));
+    try {
+      const estados = await obtenerOInicializarEstados(clienteId, anio);
+      setEstadosCache((prev) => ({
+        ...prev,
+        [clienteId]: {
+          ...(prev[clienteId] || {}),
+          [anio]: estados,
+        },
+      }));
+    } finally {
+      setLoadingEstados((prev) => ({ ...prev, [key]: false }));
+    }
   };
 
   const cambiarAnio = async (clienteId: number, nuevoAnio: number) => {
@@ -371,6 +376,7 @@ const GestionClientes = () => {
           try {
             const estados = await obtenerOInicializarEstados(cliente.id, year);
 
+            // cachear año actual
             setEstadosCache((prev) => ({
               ...prev,
               [cliente.id]: {
@@ -490,7 +496,11 @@ const GestionClientes = () => {
         );
       } catch (e) {
         console.error("Error al eliminar cliente:", e);
-        await Swal.fire("Error", `No se pudo eliminar a ${clienteAEliminar.nombre}`, "error");
+        await Swal.fire(
+          "Error",
+          `No se pudo eliminar a ${clienteAEliminar.nombre}`,
+          "error"
+        );
       }
     }
   };
@@ -501,34 +511,45 @@ const GestionClientes = () => {
   const indexOfFirstClient = indexOfLastClient - itemsPerPage;
   const currentClients = clientesFiltrados.slice(indexOfFirstClient, indexOfLastClient);
 
-  const handlePageChange = (page: number) => setCurrentPage(page);
-
   useEffect(() => {
     fetchClientes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const suspendidosVisibles = useMemo(
-    () => clientesFiltrados.filter((c) => getEstadoId(c) === 3),
-    [clientesFiltrados]
-  );
+  // ===== Helpers para control de año =====
+  const parseYear = (iso: string | null | undefined): number | null => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    return Number.isFinite(y) ? y : null;
+  };
 
-  const resumenSuspendidos = useMemo(() => {
-    if (suspendidosVisibles.length === 0) {
-      return { totalClientes: 0, totalAdeudado: 0 };
-    }
-    let total = 0;
-    for (const c of suspendidosVisibles) {
-      const precio = c.plan?.precio_mensual ?? planes[c.plan_id]?.precio_mensual ?? 0;
-      const meses = obtenerMesesAdeudados(c, anioActual, mesActual).length;
-      total += precio * meses;
-    }
-    return { totalClientes: suspendidosVisibles.length, totalAdeudado: total };
-  }, [suspendidosVisibles, planes, anioActual, mesActual]);
+  const getMinYearCliente = (cliente: Cliente): number => {
+    const yInst = parseYear(cliente.fecha_instalacion);
+    if (yInst && yInst > 1900) return yInst;
 
-  const mostrarBannerSuspendidos =
-    suspendidosVisibles.length > 0 &&
-    (estadoFilters[3] || (!estadoFilters[1] && !estadoFilters[2] && !estadoFilters[3]));
+    const yearsCached = estadosCache[cliente.id]
+      ? Object.keys(estadosCache[cliente.id])
+          .map((k) => Number(k))
+          .filter(Number.isFinite)
+      : [];
+    if (yearsCached.length > 0) return Math.min(...yearsCached);
+
+    return anioActual - 5;
+  };
+
+  const clampYear = (y: number, minY: number, maxY: number): number =>
+    Math.max(minY, Math.min(maxY, y));
+
+  const getEstadoColor = (estado?: string) => {
+    if (estado === "Pagado") return "bg-green-100 text-green-700";
+    if (estado === "Pagado Parcial") return "bg-yellow-100 text-yellow-700";
+    if (estado === "Pendiente") return "bg-red-100 text-red-700";
+    return "bg-slate-100 text-slate-600";
+  };
+
+  const isLoadingYear = (clienteId: number, anio: number): boolean =>
+    !!loadingEstados[`${clienteId}-${anio}`];
 
   return (
     <AdminLayout>
@@ -554,8 +575,18 @@ const GestionClientes = () => {
             href="/pages/admin/clientes/registrar"
             className="inline-flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
           >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            <svg
+              className="w-4 h-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
             </svg>
             Nuevo Cliente
           </Link>
@@ -570,7 +601,75 @@ const GestionClientes = () => {
           />
         </div>
 
-        {/* (El resto del JSX lo mantengo igual que tu versión, solo ajusté la impresión de vineta abajo) */}
+        {/* Filtros por estado */}
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                checked={estadoFilters[1]}
+                onChange={() =>
+                  setEstadoFilters((prev) => ({ ...prev, 1: !prev[1] }))
+                }
+              />
+              <span className="inline-flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+                  Activos
+                </span>
+                <span className="text-slate-500 text-xs">({counts.a})</span>
+              </span>
+            </label>
+
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                checked={estadoFilters[2]}
+                onChange={() =>
+                  setEstadoFilters((prev) => ({ ...prev, 2: !prev[2] }))
+                }
+              />
+              <span className="inline-flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-300">
+                  Inactivos
+                </span>
+                <span className="text-slate-500 text-xs">({counts.i})</span>
+              </span>
+            </label>
+
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                checked={estadoFilters[3]}
+                onChange={() =>
+                  setEstadoFilters((prev) => ({ ...prev, 3: !prev[3] }))
+                }
+              />
+              <span className="inline-flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-50 text-yellow-700 border border-yellow-200">
+                  Suspendidos
+                </span>
+                <span className="text-slate-500 text-xs">({counts.s})</span>
+              </span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setEstadoFilters({ 1: false, 2: false, 3: false })}
+              className="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+              title="Mostrar todos"
+            >
+              Ver todos
+            </button>
+          </div>
+
+          <div className="text-sm text-slate-600">
+            Mostrando <span className="font-semibold">{clientesFiltrados.length}</span>{" "}
+            de <span className="font-semibold">{counts.total}</span> clientes
+          </div>
+        </div>
 
         <div className="bg-white rounded-2xl shadow-lg border border-orange-200 p-6">
           {loading ? (
@@ -611,6 +710,8 @@ const GestionClientes = () => {
                     cliente.estados?.filter((e) => e.anio === anio) ??
                     [];
 
+                  const cargandoEsteAnio = isLoadingYear(cliente.id, anio);
+
                   return (
                     <div
                       key={cliente.id}
@@ -648,29 +749,78 @@ const GestionClientes = () => {
                       )}
 
                       <div className="mb-4">
-                        <div className="grid grid-cols-4 gap-2">
-                          {["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"].map(
-                            (mes, index) => {
-                              const estado = estadosDelAnio.find((e) => e.mes === index + 1);
+                        {/* Controles de año */}
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-medium text-slate-600">
+                            Año: {anio}
+                          </span>
 
-                              let bgColor = "bg-slate-100";
-                              let textColor = "text-slate-600";
-
-                              if (estado?.estado === "Pagado") {
-                                bgColor = "bg-green-100";
-                                textColor = "text-green-700";
-                              } else if (estado?.estado === "Pagado Parcial") {
-                                bgColor = "bg-yellow-100";
-                                textColor = "text-yellow-700";
-                              } else if (estado?.estado === "Pendiente") {
-                                bgColor = "bg-red-100";
-                                textColor = "text-red-700";
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const minY = getMinYearCliente(cliente);
+                                const next = clampYear(anio - 1, minY, anioActual);
+                                cambiarAnio(cliente.id, next);
+                              }}
+                              className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded disabled:opacity-60"
+                              disabled={
+                                cargandoEsteAnio || anio <= getMinYearCliente(cliente)
                               }
+                              title="Ver año anterior"
+                            >
+                              ← Anterior
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const minY = getMinYearCliente(cliente);
+                                const next = clampYear(anio + 1, minY, anioActual);
+                                cambiarAnio(cliente.id, next);
+                              }}
+                              className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded disabled:opacity-60"
+                              disabled={cargandoEsteAnio || anio >= anioActual}
+                              title="Ver año siguiente"
+                            >
+                              Siguiente →
+                            </button>
+                          </div>
+                        </div>
+
+                        {cargandoEsteAnio ? (
+                          <div className="py-3 text-center text-sm text-slate-500">
+                            Cargando estados...
+                          </div>
+                        ) : estadosDelAnio.length === 0 ? (
+                          <div className="py-2 text-center text-xs text-slate-500">
+                            Sin estados registrados para {anio}.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-2">
+                            {[
+                              "Ene",
+                              "Feb",
+                              "Mar",
+                              "Abr",
+                              "May",
+                              "Jun",
+                              "Jul",
+                              "Ago",
+                              "Sep",
+                              "Oct",
+                              "Nov",
+                              "Dic",
+                            ].map((mes, index) => {
+                              const estado = estadosDelAnio.find(
+                                (e) => e.mes === index + 1
+                              );
+                              const color = getEstadoColor(estado?.estado);
 
                               return (
                                 <div
                                   key={index}
-                                  className={`p-2 rounded text-center ${bgColor} ${textColor}`}
+                                  className={`p-2 rounded text-center ${color}`}
                                   title={estado?.estado || "Sin estado"}
                                 >
                                   <div className="text-xs font-semibold">{mes}</div>
@@ -679,9 +829,9 @@ const GestionClientes = () => {
                                   </div>
                                 </div>
                               );
-                            }
-                          )}
-                        </div>
+                            })}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex gap-2">
@@ -731,6 +881,8 @@ const GestionClientes = () => {
                           cliente.estados?.filter((e) => e.anio === anio) ??
                           [];
 
+                        const cargandoEsteAnio = isLoadingYear(cliente.id, anio);
+
                         return (
                           <tr key={cliente.id} className="hover:bg-orange-50">
                             <td className="px-4 py-3 font-medium">{cliente.id}</td>
@@ -761,33 +913,75 @@ const GestionClientes = () => {
                             </td>
 
                             <td className="px-4 py-3">
-                              <div className="grid grid-cols-6 gap-1">
-                                {["E","F","M","A","M","J","J","A","S","O","N","D"].map(
-                                  (mes, index) => {
-                                    const estado = estadosDelAnio.find(
-                                      (e) => e.mes === index + 1
-                                    );
+                              {/* Controles de año */}
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-medium text-slate-600">
+                                  Año: {anio}
+                                </span>
 
-                                    let color = "bg-slate-100 text-slate-600";
-                                    if (estado?.estado === "Pagado")
-                                      color = "bg-green-100 text-green-700";
-                                    else if (estado?.estado === "Pagado Parcial")
-                                      color = "bg-yellow-100 text-yellow-700";
-                                    else if (estado?.estado === "Pendiente")
-                                      color = "bg-red-100 text-red-700";
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const minY = getMinYearCliente(cliente);
+                                      const next = clampYear(anio - 1, minY, anioActual);
+                                      cambiarAnio(cliente.id, next);
+                                    }}
+                                    className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded disabled:opacity-60"
+                                    disabled={
+                                      cargandoEsteAnio || anio <= getMinYearCliente(cliente)
+                                    }
+                                    title="Ver año anterior"
+                                  >
+                                    ← Anterior
+                                  </button>
 
-                                    return (
-                                      <div
-                                        key={index}
-                                        className={`p-1 rounded text-center text-xs ${color}`}
-                                        title={`${mesLargo[index]}: ${estado?.estado || "Sin estado"}`}
-                                      >
-                                        {mes}
-                                      </div>
-                                    );
-                                  }
-                                )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const minY = getMinYearCliente(cliente);
+                                      const next = clampYear(anio + 1, minY, anioActual);
+                                      cambiarAnio(cliente.id, next);
+                                    }}
+                                    className="px-3 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded disabled:opacity-60"
+                                    disabled={cargandoEsteAnio || anio >= anioActual}
+                                    title="Ver año siguiente"
+                                  >
+                                    Siguiente →
+                                  </button>
+                                </div>
                               </div>
+
+                              {cargandoEsteAnio ? (
+                                <div className="py-2 text-sm text-slate-500">
+                                  Cargando estados...
+                                </div>
+                              ) : estadosDelAnio.length === 0 ? (
+                                <div className="py-2 text-xs text-slate-500">
+                                  Sin estados registrados para {anio}.
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-6 gap-1">
+                                  {["E", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"].map(
+                                    (mes, index) => {
+                                      const estado = estadosDelAnio.find(
+                                        (e) => e.mes === index + 1
+                                      );
+                                      const color = getEstadoColor(estado?.estado);
+
+                                      return (
+                                        <div
+                                          key={index}
+                                          className={`p-1 rounded text-center text-xs ${color}`}
+                                          title={`${mesLargo[index]}: ${estado?.estado || "Sin estado"}`}
+                                        >
+                                          {mes}
+                                        </div>
+                                      );
+                                    }
+                                  )}
+                                </div>
+                              )}
                             </td>
 
                             <td className="px-4 py-3">
