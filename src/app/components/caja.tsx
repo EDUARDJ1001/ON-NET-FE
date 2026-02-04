@@ -169,6 +169,12 @@ const fmt = (n: number | undefined | null) =>
 
 type ClienteOption = Pick<Cliente, "id" | "nombre">;
 
+/** ✅ FIX: fecha local YYYY-MM-DD (evita corrimiento por UTC/toISOString) */
+const toLocalISODate = (d: Date = new Date()): string => {
+  const tzOffsetMs = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
+};
+
 export default function RegistrarPago() {
   const searchParams = useSearchParams();
   const clienteIdParam = searchParams.get("clienteId");
@@ -181,11 +187,12 @@ export default function RegistrarPago() {
   const [metodoId, setMetodoId] = useState<number | null>(null);
   const [metodosPago, setMetodosPago] = useState<MetodoPago[]>([]);
   const [mesesPendientes, setMesesPendientes] = useState<EstadoMensual[]>([]);
+  const [mesesListos, setMesesListos] = useState(false);
+
 
   const [clientesCatalogo, setClientesCatalogo] = useState<ClienteOption[]>([]);
   const [loadingCatalogo, setLoadingCatalogo] = useState<boolean>(false);
 
-  const now = new Date();
   const getProximoMesYAno = () => {
     const hoy = new Date();
     let mes = hoy.getMonth() + 2; // siguiente
@@ -197,7 +204,8 @@ export default function RegistrarPago() {
     return { mes, anio };
   };
 
-  const [fechaPago, setFechaPago] = useState(now.toISOString().split("T")[0]);
+  /** ✅ FIX: fecha por defecto en local, NO con toISOString directo */
+  const [fechaPago, setFechaPago] = useState<string>(toLocalISODate());
   const [montoTotal, setMontoTotal] = useState<number>(0);
   const [referencia, setReferencia] = useState("");
   const [observacion, setObservacion] = useState("");
@@ -223,7 +231,7 @@ export default function RegistrarPago() {
 
   const cambio = useMemo(() => {
     const c = (recibido || 0) - (montoTotal || 0);
-    return isNaN(c) ? 0 : c;
+    return Number.isFinite(c) ? c : 0;
   }, [recibido, montoTotal]);
 
   const montoPorMes = useMemo(() => {
@@ -238,10 +246,8 @@ export default function RegistrarPago() {
     return copia[0];
   }, [mesesSeleccionados]);
 
-  /** ==================== UTILIDADES MESES (CORREGIDAS) ==================== */
+  /** ==================== UTILIDADES MESES ==================== */
 
-  // Genera N meses desde el MES ACTUAL (incluye el actual).
-  // Ej: si hoy es Enero 2026 y n=12 -> Ene 2026 ... Dic 2026 (sin desfase)
   const buildProximosMeses = (n: number) => {
     const hoy = new Date();
     let mes = hoy.getMonth() + 1; // 1..12 (MES ACTUAL)
@@ -249,7 +255,7 @@ export default function RegistrarPago() {
 
     const out: { mes: number; anio: number }[] = [];
     for (let i = 0; i < n; i++) {
-      out.push({ mes, anio }); // <-- primero push (evita el desfase)
+      out.push({ mes, anio });
       mes++;
       if (mes > 12) {
         mes = 1;
@@ -259,7 +265,6 @@ export default function RegistrarPago() {
     return out;
   };
 
-  // Inserta sin duplicar y opcionalmente los marca seleccionados
   const mergeMesesEnSeleccionados = useCallback(
     (nuevos: { mes: number; anio: number }[], seleccionado = false) => {
       setMesesSeleccionados((prev) => {
@@ -293,7 +298,6 @@ export default function RegistrarPago() {
 
   /** ==================== CARGAS ==================== */
 
-  // Cargar catálogo de clientes para SearchSelect
   useEffect(() => {
     const cargarCatalogo = async () => {
       setLoadingCatalogo(true);
@@ -313,10 +317,9 @@ export default function RegistrarPago() {
         setLoadingCatalogo(false);
       }
     };
-    cargarCatalogo();
+    void cargarCatalogo();
   }, []);
 
-  // Métodos de pago
   useEffect(() => {
     const fetchMetodosPago = async () => {
       setLoadingMetodos(true);
@@ -333,10 +336,9 @@ export default function RegistrarPago() {
         setLoadingMetodos(false);
       }
     };
-    fetchMetodosPago();
+    void fetchMetodosPago();
   }, []);
 
-  // Cliente
   const fetchCliente = useCallback(async (id: number) => {
     setLoadingCliente(true);
     setError("");
@@ -369,7 +371,7 @@ export default function RegistrarPago() {
     }
   }, []);
 
-  // Meses pendientes (retorna cuántos quedaron disponibles)
+  /** ✅ FIX: filtrar pendientes contra el INICIO del mes actual (evita efecto por horas) */
   const fetchMesesPendientes = useCallback(async (cid: number): Promise<number> => {
     setLoadingMeses(true);
     try {
@@ -382,10 +384,12 @@ export default function RegistrarPago() {
 
       const data: EstadoMensual[] = await res.json();
 
-      // ✅ Mantiene solo meses "hasta hoy" (pendientes reales hasta el mes actual)
       const hoy = new Date();
-      const filtrados = data.filter((m) => new Date(m.anio, m.mes - 1, 1) <= hoy);
-      filtrados.sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes));
+      const inicioMesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+
+      const filtrados = data
+        .filter((m) => new Date(m.anio, m.mes - 1, 1) <= inicioMesActual)
+        .sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes));
 
       setMesesPendientes(filtrados);
 
@@ -408,7 +412,6 @@ export default function RegistrarPago() {
     }
   }, []);
 
-  // ✅ ÚNICO efecto para reaccionar a clienteId (quitamos el duplicado)
   useEffect(() => {
     const run = async () => {
       if (!clienteId) return;
@@ -416,20 +419,17 @@ export default function RegistrarPago() {
       await fetchCliente(clienteId);
       const pendientesCount = await fetchMesesPendientes(clienteId);
 
-      // Si no hay pendientes, precarga 12 meses desde el mes actual y activa modo múltiple
       if (pendientesCount === 0) {
         const futuros12 = buildProximosMeses(12);
         setMesesSeleccionados(futuros12.map((f) => ({ mes: f.mes, anio: f.anio, seleccionado: false })));
         setModoMultiplesMeses(true);
       } else {
-        // si sí hay pendientes, lo normal es pago simple (o el usuario puede cambiarlo)
         setModoMultiplesMeses(false);
       }
     };
     void run();
   }, [clienteId, fetchCliente, fetchMesesPendientes]);
 
-  // Total automático (múltiple)
   useEffect(() => {
     if (modoMultiplesMeses && plan) {
       if (mesesSeleccionadosCount > 0) {
@@ -513,7 +513,6 @@ export default function RegistrarPago() {
     }
   };
 
-  // Dispara export al tener factura renderizada
   useEffect(() => {
     if (factura && pdfRef.current) {
       const t = setTimeout(() => {
@@ -550,7 +549,7 @@ export default function RegistrarPago() {
         const body = {
           cliente_id: clienteId,
           monto_total: Number(montoTotal),
-          fecha_pago: fechaPago,
+          fecha_pago: fechaPago, // ✅ ya es local
           metodo_id: metodoId,
           referencia: referencia || null,
           observacion: observacion || null,
@@ -583,10 +582,8 @@ export default function RegistrarPago() {
         }
         setOkMsg(msg);
 
-        // Refresca meses pendientes
         void fetchMesesPendientes(clienteId);
 
-        // Para el PDF: usa los meses reales aplicados del backend
         setFactura({
           numero: (pagoIds[0] ?? Date.now()).toString(),
           fechaEmision: fechaPago,
@@ -610,10 +607,11 @@ export default function RegistrarPago() {
       } else {
         const target = mesMasAntiguoPendiente;
         const { mes: nextMes, anio: nextAnio } = getProximoMesYAno();
+
         const body = {
           cliente_id: clienteId,
           monto: Number(montoTotal),
-          fecha_pago: fechaPago,
+          fecha_pago: fechaPago, // ✅ ya es local
           metodo_id: metodoId,
           referencia: referencia || null,
           observacion: observacion || null,
@@ -666,7 +664,6 @@ export default function RegistrarPago() {
         });
       }
 
-      // limpiar campos
       setReferencia("");
       setObservacion("");
       setRecibido(0);
@@ -679,7 +676,6 @@ export default function RegistrarPago() {
     }
   };
 
-  // Cuando eliges en SearchSelect
   const handleSeleccionCliente = (val: string) => {
     setClienteIdInput(val);
     const idSel = Number(val);
@@ -687,6 +683,26 @@ export default function RegistrarPago() {
       setClienteId(idSel);
     }
   };
+
+  const pagoSimpleRequiereMesObjetivo =
+    !!cliente &&
+    !modoMultiplesMeses &&
+    !loadingMeses &&
+    mesesPendientes.length > 0 &&
+    !mesMasAntiguoPendiente;
+
+  // Bloqueo total de submit cuando aún está cargando / incompleto
+  const bloquearSubmit =
+    loading ||
+    loadingCliente ||
+    loadingMeses ||
+    !clienteId ||
+    !metodoId ||
+    (modoMultiplesMeses && mesesSeleccionadosCount === 0) ||
+    recibido < montoTotal ||
+    (!!cliente && !modoMultiplesMeses && !mesesListos) ||
+    pagoSimpleRequiereMesObjetivo;
+
 
   return (
     <AdminLayout>
@@ -701,7 +717,6 @@ export default function RegistrarPago() {
         </div>
 
         <div className="w-full bg-white p-4 sm:p-6 lg:p-8 rounded-2xl shadow-xl border border-orange-300">
-          {/* Selector de cliente con SearchSelect */}
           {!cliente && !loadingCliente && (
             <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 mb-1">Buscar Cliente (por nombre o ID)</label>
@@ -721,7 +736,6 @@ export default function RegistrarPago() {
             </div>
           )}
 
-          {/* Info cliente + plan */}
           {loadingCliente ? (
             <p className="text-slate-500 text-sm">Cargando cliente...</p>
           ) : cliente ? (
@@ -791,12 +805,7 @@ export default function RegistrarPago() {
                   className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                   Cambiar de cliente
                 </button>
@@ -819,7 +828,6 @@ export default function RegistrarPago() {
             </div>
           ) : null}
 
-          {/* Selector de modo */}
           {cliente && (
             <div className="mb-6">
               <label className="block text-sm font-medium text-slate-700 mb-2">Tipo de Pago</label>
@@ -836,7 +844,6 @@ export default function RegistrarPago() {
             </div>
           )}
 
-          {/* Formulario */}
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Fecha de pago</label>
@@ -888,7 +895,6 @@ export default function RegistrarPago() {
                       <button
                         type="button"
                         onClick={() => {
-                          // ✅ CORREGIDO: ya no se desfasa (incluye mes actual)
                           const futuros12 = buildProximosMeses(12);
                           mergeMesesEnSeleccionados(futuros12, false);
                         }}
@@ -991,10 +997,19 @@ export default function RegistrarPago() {
             <div className="md:col-span-2 mt-2 flex items-center gap-2">
               <button
                 type="submit"
-                disabled={loading || !clienteId || !metodoId || (modoMultiplesMeses && mesesSeleccionadosCount === 0) || recibido < montoTotal}
-                className="w-full md:w-auto px-6 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                disabled={bloquearSubmit}
+                className="w-full md:w-auto px-6 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                title={
+                  !modoMultiplesMeses && !mesesListos
+                    ? "Espera a que carguen los meses pendientes para evitar aplicar el pago al mes incorrecto."
+                    : undefined
+                }
               >
-                {loading ? "Registrando..." : modoMultiplesMeses ? `Registrar ${mesesSeleccionadosCount} Pago(s)` : "Registrar Pago"}
+                {loading
+                  ? "Registrando..."
+                  : modoMultiplesMeses
+                    ? `Registrar ${mesesSeleccionadosCount} Pago(s)`
+                    : "Registrar Pago"}
               </button>
 
               {factura && (
@@ -1036,13 +1051,7 @@ export default function RegistrarPago() {
         >
           <style>{`
             .pdf-wrap { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; color: #0f172a; }
-            .pdf-page {
-              width: 190mm;
-              min-height: 277mm;
-              padding: 10mm;
-              box-sizing: border-box;
-              margin: 0 auto;
-            }
+            .pdf-page { width: 190mm; min-height: 277mm; padding: 10mm; box-sizing: border-box; margin: 0 auto; }
             .pdf-page + .pdf-page { page-break-before: always; }
             .pdf-banner { margin-bottom: 8px; }
             .pdf-banner img { display:block; width:100%; height:auto; max-height:28mm; object-fit:contain; }
