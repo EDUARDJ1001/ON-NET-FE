@@ -60,6 +60,17 @@ const VerPagos = () => {
     anio: anioActual,
   });
 
+  const ymdToLocalDate = (s: string): Date | null => {
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const dt = new Date(y, mo - 1, d); // local, sin UTC
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  };
+
+
   useEffect(() => {
     cargarDatosIniciales();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -183,19 +194,20 @@ const VerPagos = () => {
   };
 
   const formatFecha = (fecha: string) => {
-    // Si la fecha ya está en formato YYYY-MM-DD, usarla directamente
-    if (fecha.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const [year, month, day] = fecha.split('-');
-      return `${day}-${month}-${year}`;
+    if (!fecha) return "-";
+
+    // 'YYYY-MM-DD' o 'YYYY-MM-DDTHH:mm:ss...'
+    const m = fecha.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      const [, y, mo, d] = m;
+      return `${d}-${mo}-${y}`;
     }
 
-    // Para otros formatos, crear la fecha ajustando la zona horaria
+    // fallback (por si viene algo raro)
     const date = new Date(fecha);
+    if (Number.isNaN(date.getTime())) return fecha;
 
-    // Ajustar para compensar la zona horaria
-    const adjustedDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
-
-    return adjustedDate.toLocaleDateString("es-HN", {
+    return date.toLocaleDateString("es-HN", {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -374,11 +386,16 @@ const VerPagos = () => {
             <div className="text-sm text-slate-600">Pagos Último Mes</div>
             <div className="text-2xl font-bold text-blue-600">
               {pagosFiltrados.filter((pago) => {
-                const fechaPago = new Date(pago.fecha_pago);
+                const fechaPago = ymdToLocalDate(pago.fecha_pago);
+                if (!fechaPago) return false;
+
                 const unMesAtras = new Date();
                 unMesAtras.setMonth(unMesAtras.getMonth() - 1);
+                unMesAtras.setHours(0, 0, 0, 0);
+
                 return fechaPago >= unMesAtras;
               }).length}
+
             </div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow-md">

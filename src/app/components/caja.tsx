@@ -1101,7 +1101,7 @@ export default function RegistrarPago() {
                       Datos del cobro
                     </div>
                     <div className="pdf-subtle">
-                      <b>Fecha:</b> {new Date().toLocaleString()}
+                      <b>Fecha:</b> {factura.fechaEmision}
                     </div>
                     <div className="pdf-subtle">
                       <b>Método:</b> {factura.metodoPago}
