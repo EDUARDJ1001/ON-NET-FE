@@ -18,6 +18,12 @@ interface Pago {
   observacion: string;
   mes_aplicado: number;
   anio_aplicado: number;
+  estado?: string;
+  estado_pago?: string;
+  es_parcial?: boolean;
+  monto_plan?: number;
+  monto_acumulado?: number;
+  saldo_pendiente?: number;
   created_at: string;
   updated_at: string;
   cliente_nombre?: string;
@@ -249,6 +255,30 @@ const VerPagos = () => {
     return meses[mes - 1] || mes.toString();
   };
 
+  const parseHnlFromText = (value: string): number | null => {
+    const normalized = value.replace(/\./g, "").replace(",", ".").trim();
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const getSaldoPendiente = (pago: Pago): number | null => {
+    const saldoApi = Number(pago.saldo_pendiente);
+    if (Number.isFinite(saldoApi) && saldoApi >= 0) return saldoApi;
+
+    const obs = pago.observacion || "";
+    const match = obs.match(/Saldo pendiente:\s*L\.?\s*([0-9.,]+)/i);
+    if (!match?.[1]) return null;
+    return parseHnlFromText(match[1]);
+  };
+
+  const getEstadoPago = (pago: Pago): "Pagado" | "Pagado Parcial" => {
+    const estadoRaw = (pago.estado_pago || pago.estado || "").toLowerCase();
+    if (estadoRaw.includes("parcial")) return "Pagado Parcial";
+    if (pago.es_parcial === true) return "Pagado Parcial";
+    if ((pago.observacion || "").toLowerCase().includes("pago parcial")) return "Pagado Parcial";
+    return "Pagado";
+  };
+
   // Filtro local por método (cadena) encima de lo que devuelve la API
   const pagosFiltrados = pagos.filter((pago) => {
     const { metodo } = filtros;
@@ -426,6 +456,9 @@ const VerPagos = () => {
                     Mes Aplicado
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">
+                    Estado
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">
                     Método
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">
@@ -439,14 +472,18 @@ const VerPagos = () => {
               <tbody className="divide-y divide-slate-200">
                 {pagosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-4 text-center text-slate-500">
+                    <td colSpan={9} className="px-4 py-4 text-center text-slate-500">
                       {pagos.length === 0
                         ? "No hay pagos registrados"
                         : "No se encontraron pagos con los filtros aplicados"}
                     </td>
                   </tr>
                 ) : (
-                  pagosFiltrados.map((pago) => (
+                  pagosFiltrados.map((pago) => {
+                    const estadoPago = getEstadoPago(pago);
+                    const saldoPendiente = getSaldoPendiente(pago);
+
+                    return (
                     <tr key={pago.id} className="hover:bg-slate-50">
                       <td className="px-4 py-4 text-sm text-slate-900">{pago.id}</td>
                       <td className="px-4 py-4 text-sm text-slate-900">{getNombreCompletoCliente(pago.cliente_id)}</td>
@@ -454,6 +491,24 @@ const VerPagos = () => {
                       <td className="px-4 py-4 text-sm text-slate-900">{formatFecha(pago.fecha_pago)}</td>
                       <td className="px-4 py-4 text-sm text-slate-900">
                         {getNombreMes(pago.mes_aplicado)} {pago.anio_aplicado}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-900">
+                        <div className="flex flex-col gap-1">
+                          <span
+                            className={`inline-flex items-center w-fit px-2 py-1 rounded-full text-xs font-medium ${
+                              estadoPago === "Pagado Parcial"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-emerald-100 text-emerald-800"
+                            }`}
+                          >
+                            {estadoPago}
+                          </span>
+                          {saldoPendiente !== null && saldoPendiente > 0 && (
+                            <span className="text-[11px] text-amber-700">
+                              Saldo: {formatMonto(saldoPendiente)}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-900">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -465,7 +520,7 @@ const VerPagos = () => {
                         {pago.observacion || "-"}
                       </td>
                     </tr>
-                  ))
+                  )})
                 )}
               </tbody>
             </table>

@@ -86,6 +86,11 @@ interface FacturaData {
     direccion: string;
   };
   plan?: { nombre?: string; precio_mensual?: number };
+  estadoPago?: "Pagado" | "Pagado Parcial";
+  montoPlan?: number;
+  montoPrevioMes?: number;
+  montoAbonadoMes?: number;
+  saldoPendienteMes?: number;
   metodoPago: string;
   referencia?: string | null;
   observacion?: string | null;
@@ -175,6 +180,15 @@ const toLocalISODate = (d: Date = new Date()): string => {
   return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
 };
 
+const combinarObservacion = (base: string, extra: string): string | null => {
+  const b = (base || "").trim();
+  const e = (extra || "").trim();
+  if (b && e) return `${b} | ${e}`;
+  if (b) return b;
+  if (e) return e;
+  return null;
+};
+
 export default function RegistrarPago() {
   const searchParams = useSearchParams();
   const clienteIdParam = searchParams.get("clienteId");
@@ -245,6 +259,29 @@ export default function RegistrarPago() {
     copia.sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes));
     return copia[0];
   }, [mesesSeleccionados]);
+
+  const planPrecioMensual = useMemo(() => Number(plan?.precio_mensual || 0), [plan]);
+
+  const estadoMesObjetivo = useMemo(() => {
+    if (modoMultiplesMeses || !mesMasAntiguoPendiente) return undefined;
+    return mesesPendientes.find(
+      (m) =>
+        m.mes === mesMasAntiguoPendiente.mes &&
+        m.anio === mesMasAntiguoPendiente.anio
+    );
+  }, [modoMultiplesMeses, mesMasAntiguoPendiente, mesesPendientes]);
+
+  const totalPagadoMesObjetivo = useMemo(() => {
+    const raw = Number(estadoMesObjetivo?.total_pagado || 0);
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  }, [estadoMesObjetivo]);
+
+  const saldoPendienteMesObjetivo = useMemo(() => {
+    if (!planPrecioMensual) return 0;
+    if (!mesMasAntiguoPendiente) return planPrecioMensual;
+    const saldo = Number((planPrecioMensual - totalPagadoMesObjetivo).toFixed(2));
+    return saldo > 0 ? saldo : planPrecioMensual;
+  }, [planPrecioMensual, totalPagadoMesObjetivo, mesMasAntiguoPendiente]);
 
   /** ==================== UTILIDADES MESES ==================== */
 
@@ -374,6 +411,7 @@ export default function RegistrarPago() {
   /** ✅ FIX: filtrar pendientes contra el INICIO del mes actual (evita efecto por horas) */
   const fetchMesesPendientes = useCallback(async (cid: number): Promise<number> => {
     setLoadingMeses(true);
+    setMesesListos(false);
     try {
       const res = await fetch(`${apiHost}/api/pagos/meses-pendientes/${cid}`);
       if (!res.ok) {
@@ -409,6 +447,7 @@ export default function RegistrarPago() {
       return 0;
     } finally {
       setLoadingMeses(false);
+      setMesesListos(true);
     }
   }, []);
 
@@ -431,14 +470,19 @@ export default function RegistrarPago() {
   }, [clienteId, fetchCliente, fetchMesesPendientes]);
 
   useEffect(() => {
-    if (modoMultiplesMeses && plan) {
+    if (!plan) return;
+
+    if (modoMultiplesMeses) {
       if (mesesSeleccionadosCount > 0) {
         setMontoTotal(Number(plan.precio_mensual) * mesesSeleccionadosCount);
       } else {
         setMontoTotal(0);
       }
+      return;
     }
-  }, [modoMultiplesMeses, plan, mesesSeleccionadosCount]);
+
+    setMontoTotal(Number(saldoPendienteMesObjetivo || planPrecioMensual || 0));
+  }, [modoMultiplesMeses, plan, mesesSeleccionadosCount, saldoPendienteMesObjetivo, planPrecioMensual]);
 
   /** ===== Exportar PDF ===== */
   const exportarPDF = async () => {
@@ -532,7 +576,23 @@ export default function RegistrarPago() {
     if (!metodoId) return setError("Selecciona un método de pago.");
     if (!montoTotal || montoTotal <= 0) return setError("El monto debe ser mayor a 0.");
     if (!fechaPago) return setError("La fecha de pago es requerida.");
-    if (recibido < montoTotal) return setError("El recibido no puede ser menor que el monto total.");
+    if (!modoMultiplesMeses && loadingMeses) {
+      return setError("Espera a que carguen los meses pendientes para registrar el pago.");
+    }
+    if (!modoMultiplesMeses && mesesPendientes.length > 0 && !mesMasAntiguoPendiente) {
+      return setError("No se pudo determinar el mes objetivo del pago. Recarga la vista e intenta de nuevo.");
+    }
+    if (modoMultiplesMeses && recibido < montoTotal) {
+      return setError("En pagos múltiples, el recibido no puede ser menor que el monto total.");
+    }
+    if (!modoMultiplesMeses && recibido <= 0) {
+      return setError("Ingresa un monto recibido mayor a 0 para registrar el pago.");
+    }
+    if (!modoMultiplesMeses && saldoPendienteMesObjetivo > 0 && Number(montoTotal) > saldoPendienteMesObjetivo) {
+      return setError(
+        `El monto supera el saldo pendiente del mes objetivo (L.${fmt(saldoPendienteMesObjetivo)}).`
+      );
+    }
 
     setLoading(true);
     try {
@@ -608,26 +668,80 @@ export default function RegistrarPago() {
         const target = mesMasAntiguoPendiente;
         const { mes: nextMes, anio: nextAnio } = getProximoMesYAno();
 
-        const body = {
+        const montoBase = Number(montoTotal);
+        const montoRecibido = Number(recibido);
+        const montoIngresado = Number(Math.max(0, Math.min(montoBase, montoRecibido)).toFixed(2));
+        if (montoIngresado <= 0) {
+          setLoading(false);
+          setError("El abono parcial debe ser mayor a 0.");
+          return;
+        }
+        const montoPrevioMes = Number(totalPagadoMesObjetivo || 0);
+        const montoAcumuladoMes = Number((montoPrevioMes + montoIngresado).toFixed(2));
+        const pagoQuedaParcial =
+          planPrecioMensual > 0 && montoAcumuladoMes + 0.0001 < planPrecioMensual;
+        const saldoPendienteDespues = planPrecioMensual > 0
+          ? Math.max(Number((planPrecioMensual - montoAcumuladoMes).toFixed(2)), 0)
+          : 0;
+        const estadoPagoMes: "Pagado" | "Pagado Parcial" = pagoQuedaParcial
+          ? "Pagado Parcial"
+          : "Pagado";
+
+        const detalleParcial = pagoQuedaParcial
+          ? `[PAGO PARCIAL] Abonado: L.${fmt(montoIngresado)} de L.${fmt(planPrecioMensual)}. Acumulado: L.${fmt(montoAcumuladoMes)}. Saldo pendiente: L.${fmt(saldoPendienteDespues)}.`
+          : "";
+        const observacionFinal = combinarObservacion(observacion, detalleParcial);
+
+        const bodyBase = {
           cliente_id: clienteId,
-          monto: Number(montoTotal),
+          monto: montoIngresado,
           fecha_pago: fechaPago, // ✅ ya es local
           metodo_id: metodoId,
           referencia: referencia || null,
-          observacion: observacion || null,
+          observacion: observacionFinal,
           mes_aplicado: target?.mes ?? nextMes,
           anio_aplicado: target?.anio ?? nextAnio,
         };
 
-        const res = await fetch(`${apiHost}/api/pagos`, {
+        const body = {
+          ...bodyBase,
+          estado: estadoPagoMes,
+          es_parcial: pagoQuedaParcial,
+          monto_plan: planPrecioMensual || null,
+          monto_previo: montoPrevioMes,
+          monto_acumulado: montoAcumuladoMes,
+          saldo_pendiente: saldoPendienteDespues,
+        };
+
+        let res = await fetch(`${apiHost}/api/pagos`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
 
+        let persistenciaParcialLimitada = false;
         if (!res.ok) {
-          const errorData: Partial<PagoSimpleResponse> = await res.json().catch(() => ({} as Partial<PagoSimpleResponse>));
-          throw new Error((errorData as { message?: string })?.message || "Error al registrar el pago");
+          const errorData: Partial<PagoSimpleResponse> & { message?: string } =
+            await res.json().catch(() => ({} as Partial<PagoSimpleResponse> & { message?: string }));
+          const msgError = errorData?.message || "Error al registrar el pago";
+
+          const pareceErrorDeEsquema =
+            /unknown|unexpected|invalid|property|campo|permitido|schema/i.test(msgError);
+
+          if (pagoQuedaParcial && pareceErrorDeEsquema) {
+            res = await fetch(`${apiHost}/api/pagos`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(bodyBase),
+            });
+            persistenciaParcialLimitada = true;
+          }
+        }
+
+        if (!res.ok) {
+          const errorData: Partial<PagoSimpleResponse> & { message?: string } =
+            await res.json().catch(() => ({} as Partial<PagoSimpleResponse> & { message?: string }));
+          throw new Error(errorData?.message || "Error al registrar el pago");
         }
 
         const result: PagoSimpleResponse = await res.json();
@@ -636,6 +750,12 @@ export default function RegistrarPago() {
         const anioFinal = result.aplicado_a?.anio ?? result.anio_aplicado;
 
         let msg = `✅ Pago registrado para ${monthNames[mesFinal - 1]} ${anioFinal}.`;
+        if (pagoQuedaParcial) {
+          msg += ` Estado: Pagado Parcial (saldo pendiente: L.${fmt(saldoPendienteDespues)}).`;
+          if (persistenciaParcialLimitada) {
+            msg += " El backend no aceptó campos extendidos; se dejó trazabilidad del parcial en observación.";
+          }
+        }
         if (result.nota) msg += ` (${result.nota})`;
         setOkMsg(msg);
 
@@ -651,16 +771,21 @@ export default function RegistrarPago() {
             direccion: cliente?.direccion || "",
           },
           plan: { nombre: plan?.nombre, precio_mensual: plan?.precio_mensual },
+          estadoPago: estadoPagoMes,
+          montoPlan: planPrecioMensual || undefined,
+          montoPrevioMes: montoPrevioMes,
+          montoAbonadoMes: montoAcumuladoMes,
+          saldoPendienteMes: saldoPendienteDespues,
           metodoPago: metodoDesc,
           referencia: referencia || null,
-          observacion: observacion || null,
+          observacion: observacionFinal,
           tipo: "simple",
           mes_aplicado: Number(mesFinal),
           anio_aplicado: Number(anioFinal),
           pagoId: Number(result.id),
-          total: Number(montoTotal),
-          recibido: Number(recibido),
-          cambio: Number(cambio),
+          total: Number(montoIngresado),
+          recibido: Number(montoRecibido),
+          cambio: Number((montoRecibido - montoIngresado).toFixed(2)),
         });
       }
 
@@ -684,24 +809,15 @@ export default function RegistrarPago() {
     }
   };
 
-  const pagoSimpleRequiereMesObjetivo =
-    !!cliente &&
-    !modoMultiplesMeses &&
-    !loadingMeses &&
-    mesesPendientes.length > 0 &&
-    !mesMasAntiguoPendiente;
-
   // Bloqueo total de submit cuando aún está cargando / incompleto
   const bloquearSubmit =
     loading ||
     loadingCliente ||
-    loadingMeses ||
     !clienteId ||
     !metodoId ||
     (modoMultiplesMeses && mesesSeleccionadosCount === 0) ||
-    recibido < montoTotal ||
-    (!!cliente && !modoMultiplesMeses && !mesesListos) ||
-    pagoSimpleRequiereMesObjetivo;
+    (modoMultiplesMeses && recibido < montoTotal) ||
+    (!modoMultiplesMeses && recibido <= 0);
 
 
   return (
@@ -786,6 +902,13 @@ export default function RegistrarPago() {
                     <>
                       Este cliente está al día. El pago se acreditará al <b>próximo mes</b> ({monthNames[getProximoMesYAno().mes - 1]} {getProximoMesYAno().anio}).
                     </>
+                  )}
+                  {!!mesMasAntiguoPendiente && planPrecioMensual > 0 && (
+                    <div className="mt-2 text-xs">
+                      Mensualidad: <b>L.{fmt(planPrecioMensual)}</b>. Abonado acumulado:{" "}
+                      <b>L.{fmt(totalPagadoMesObjetivo)}</b>. Saldo pendiente:{" "}
+                      <b>L.{fmt(saldoPendienteMesObjetivo)}</b>.
+                    </div>
                   )}
                 </div>
               )}
@@ -945,6 +1068,7 @@ export default function RegistrarPago() {
                 type="number"
                 step="0.01"
                 min={0}
+                max={!modoMultiplesMeses && saldoPendienteMesObjetivo > 0 ? saldoPendienteMesObjetivo : undefined}
                 value={montoTotal}
                 onChange={(e) => setMontoTotal(Number(e.target.value))}
                 className="w-full px-3 py-2 border rounded-md"
@@ -955,6 +1079,11 @@ export default function RegistrarPago() {
                 </p>
               )}
               {!modoMultiplesMeses && <p className="mt-1 text-xs text-slate-500">Sugerido por plan: L.{fmt(plan?.precio_mensual)}</p>}
+              {!modoMultiplesMeses && !!mesMasAntiguoPendiente && (
+                <p className="mt-1 text-xs text-amber-700">
+                  Monto máximo para este mes: L.{fmt(saldoPendienteMesObjetivo)}
+                </p>
+              )}
             </div>
 
             <div>
@@ -970,6 +1099,11 @@ export default function RegistrarPago() {
               <p className={`mt-1 text-sm ${cambio < 0 ? "text-red-600" : "text-slate-700"}`}>
                 {cambio < 0 ? "Falta" : "Cambio"}: <span className="font-semibold">L.{fmt(Math.abs(cambio))}</span>
               </p>
+              {!modoMultiplesMeses && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Si el recibido es menor a la mensualidad, se registrará como pago parcial.
+                </p>
+              )}
             </div>
 
             <div>
@@ -1117,6 +1251,11 @@ export default function RegistrarPago() {
                         {factura.plan?.precio_mensual ? `(L.${fmt(factura.plan.precio_mensual)}/mes)` : ""}
                       </div>
                     )}
+                    {factura.estadoPago && (
+                      <div className="pdf-subtle">
+                        <b>Estado:</b> {factura.estadoPago}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1161,6 +1300,11 @@ export default function RegistrarPago() {
 
                 <div className="h-sep" />
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 24 }}>
+                  {factura.montoPlan ? (
+                    <div className="pdf-subtle">
+                      <b>Mensualidad:</b> L.{fmt(factura.montoPlan)}
+                    </div>
+                  ) : null}
                   <div className="pdf-subtle">
                     <b>Total:</b> L.{fmt(factura.total)}
                   </div>
@@ -1171,6 +1315,11 @@ export default function RegistrarPago() {
                     <b>{factura.cambio < 0 ? "Falta" : "Cambio"}:</b> L.{fmt(Math.abs(factura.cambio))}
                   </div>
                 </div>
+                {factura.estadoPago === "Pagado Parcial" && (
+                  <div className="pdf-subtle" style={{ marginTop: 6, textAlign: "right" }}>
+                    <b>Saldo pendiente del mes:</b> L.{fmt(factura.saldoPendienteMes)}
+                  </div>
+                )}
               </div>
 
               {factura.observacion && (
