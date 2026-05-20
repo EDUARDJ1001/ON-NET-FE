@@ -80,6 +80,7 @@ export default function SidebarAdmin({
               <Item href="/pages/admin/iptv/clientes" label="Gestión de Clientes de IPTV" />
               <Item href="/pages/admin/empleados" label="Gestión de Empleados" />
               <Item href="/pages/admin/cotizaciones" label="Cotizaciones" /> 
+              <Item href="/pages/admin/bitacora" label="Bitacora" />
             </ul>
           </div>
 
